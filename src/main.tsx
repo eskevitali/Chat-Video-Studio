@@ -1,0 +1,866 @@
+import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {Player, type PlayerRef} from '@remotion/player';
+import {ChatVideo} from './remotion/ChatVideo';
+import {compileTimeline} from './domain/timeline';
+import {prototypeProject} from './data/prototype-project';
+import type {AudioTake, ElevenLabsModelId, ElevenLabsSettings, MessageImage, ProjectTheme, PrototypeMessage, PrototypeProject, ThemePresetId, TtsProvider, VideoSettings} from './domain/types';
+import {createApproximateWordTimings, estimateSpeechDuration} from './domain/words';
+import {importedChatToProject, parseMarkdownChat} from './import/markdown';
+import {parseEditorSnapshot, serializeEditorSnapshot} from './persistence/editor-snapshot';
+import {defaultProjectTheme, themePresets} from './remotion/theme';
+import {defaultVideoSettings, getVideoDimensions, resolveVideoSettings, videoDimensions} from './domain/video';
+import {moveMessageBy, reorderMessages} from './domain/messages';
+import './styles.css';
+
+const STORAGE_KEY = 'chat-video-studio.editor-snapshot.v1';
+
+type RenderJob = {
+  id: string;
+  status: 'rendering' | 'complete' | 'failed';
+  url?: string;
+  error?: string;
+};
+
+const loadInitialProject = (): {project: PrototypeProject; notice: string} => {
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return {
+        project: parseEditorSnapshot(saved).project,
+        notice: 'Проект восстановлен из автосохранения.',
+      };
+    }
+  } catch {
+    // Недоступное или повреждённое локальное хранилище не должно блокировать редактор.
+  }
+  return {project: prototypeProject, notice: 'Демонстрационный проект с двумя аудиодублями.'};
+};
+
+const safeFileName = (title: string) => {
+  const normalized = title.trim().replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '');
+  return normalized || 'chat-video-project';
+};
+
+const getImageDimensions = (file: File) => new Promise<{width: number; height: number}>((resolvePromise, reject) => {
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  image.onload = () => {
+    URL.revokeObjectURL(url);
+    resolvePromise({width: image.naturalWidth, height: image.naturalHeight});
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(url);
+    reject(new Error('Не удалось прочитать изображение.'));
+  };
+  image.src = url;
+});
+
+const App: React.FC = () => {
+  const [initial] = useState(loadInitialProject);
+  const [project, setProject] = useState<PrototypeProject>(initial.project);
+  const [notice, setNotice] = useState(initial.notice);
+  const [error, setError] = useState('');
+  const [generating, setGenerating] = useState<Record<string, boolean>>({});
+  const [uploadingImage, setUploadingImage] = useState<Record<string, boolean>>({});
+  const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
+  const [selectedMessageId, setSelectedMessageId] = useState<string>(() => initial.project.messages[0]?.id ?? '');
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const [timelineFit, setTimelineFit] = useState(true);
+  const [draggedMessageId, setDraggedMessageId] = useState('');
+  const [dropTargetId, setDropTargetId] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const player = useRef<PlayerRef>(null);
+  const timeline = useMemo(() => compileTimeline(project), [project]);
+  const selectedMessage = timeline.messages.find((message) => message.id === selectedMessageId) ?? timeline.messages[0];
+  const selectedMessageIndex = selectedMessage
+    ? timeline.messages.findIndex((message) => message.id === selectedMessage.id)
+    : -1;
+  const video = resolveVideoSettings(project.video);
+  const elevenLabs = project.elevenLabs ?? {modelId: 'eleven_multilingual_v2'};
+  const dimensions = getVideoDimensions(project.video);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, serializeEditorSnapshot(project));
+    } catch {
+      setError('Автосохранение недоступно: локальное хранилище браузера переполнено или заблокировано.');
+    }
+  }, [project]);
+
+  const changeTimelineZoom = (direction: -1 | 1) => {
+    setTimelineFit(false);
+    setTimelineZoom((current) => {
+      const base = timelineFit ? 1 : current;
+      return Math.min(4, Math.max(0.5, base + direction * 0.25));
+    });
+  };
+
+  const importFile = async (file: File) => {
+    try {
+      const source = await file.text();
+      const isJson = file.name.toLowerCase().endsWith('.json') || file.type === 'application/json';
+      const imported = isJson
+        ? parseEditorSnapshot(source).project
+        : importedChatToProject(parseMarkdownChat(source));
+      setProject(imported);
+      setSelectedMessageId(imported.messages[0]?.id ?? '');
+      setError('');
+      setNotice(isJson
+        ? `Снимок восстановлен: ${imported.messages.length} реплик.`
+        : `Импортировано: ${imported.messages.length} реплик. Озвучка ещё не создана.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Не удалось импортировать файл.');
+    }
+  };
+
+  const exportSnapshot = () => {
+    const blob = new Blob([serializeEditorSnapshot(project)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${safeFileName(project.title)}.chat-video.json`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setError('');
+    setNotice('JSON-снимок сохранён. Аудиофайлы в него не встраиваются.');
+  };
+
+  const renderVideo = async () => {
+    setError('');
+    setNotice(`Запускается рендер ${dimensions.width}×${dimensions.height}, ${project.fps} FPS…`);
+    setRenderJob({id: '', status: 'rendering'});
+    try {
+      const response = await fetch('/api/render', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project}),
+      });
+      const initial = await response.json() as RenderJob & {error?: string};
+      if (!response.ok || !initial.id) throw new Error(initial.error || 'Не удалось запустить Remotion.');
+      setRenderJob(initial);
+      setNotice('Видео рендерится локально. Для длинного диалога это может занять несколько минут.');
+
+      let current = initial;
+      while (current.status === 'rendering') {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        const statusResponse = await fetch(`/api/render/${initial.id}`);
+        current = await statusResponse.json() as RenderJob;
+        if (!statusResponse.ok) throw new Error(current.error || 'Не удалось получить состояние рендера.');
+        setRenderJob(current);
+      }
+      if (current.status === 'failed') throw new Error(current.error || 'Рендер завершился с ошибкой.');
+      setNotice('MP4 готов. Файл можно скачать кнопкой вверху.');
+    } catch (caught) {
+      setRenderJob((current) => current ? {...current, status: 'failed'} : null);
+      setError(caught instanceof Error ? caught.message : 'Ошибка рендера видео.');
+    }
+  };
+
+  const updateMessage = (messageId: string, text: string) => {
+    setProject((current) => ({
+      ...current,
+      messages: current.messages.map((message) => {
+        if (message.id !== messageId) return message;
+        const durationMs = estimateSpeechDuration(text);
+        const history = message.takes ?? (message.take.audioPath ? [message.take] : []);
+        return {
+          ...message,
+          text,
+          takes: history,
+          take: {
+            ...message.take,
+            id: `${message.take.id}-edited`,
+            audioPath: undefined,
+            durationMs,
+            words: createApproximateWordTimings(text, durationMs),
+          },
+        };
+      }),
+    }));
+    setNotice('Текст изменён. Существующая озвучка снята с реплики как устаревшая.');
+  };
+
+  const updateAuthor = (role: PrototypeMessage['role'], author: string) => {
+    setProject((current) => ({
+      ...current,
+      messages: current.messages.map((message) => message.role === role ? {...message, author} : message),
+    }));
+    setError('');
+    setNotice(`Подпись роли «${role === 'user' ? 'Пользователь' : 'Ассистент'}» обновлена во всех репликах.`);
+  };
+
+  const updateTheme = (patch: Partial<ProjectTheme>) => {
+    setProject((current) => ({
+      ...current,
+      theme: {...defaultProjectTheme, ...current.theme, ...patch},
+    }));
+    setError('');
+    setNotice('Стиль обновлён и добавлен в автосохранение.');
+  };
+
+  const selectThemePreset = (presetId: ThemePresetId) => {
+    const preset = themePresets[presetId];
+    updateTheme({
+      presetId,
+      canvas: preset.canvas,
+      chatBackground: preset.chat,
+      accent: preset.accent,
+      userBubble: preset.userBubble,
+      assistantBubble: preset.assistantBubble,
+    });
+  };
+
+  const updateVideo = (patch: Partial<VideoSettings>) => {
+    setProject((current) => ({
+      ...current,
+      video: {...defaultVideoSettings, ...current.video, ...patch},
+    }));
+    setError('');
+    setNotice('Параметры кадра обновлены и добавлены в автосохранение.');
+  };
+
+  const updateElevenLabs = (patch: Partial<ElevenLabsSettings>) => {
+    setProject((current) => ({
+      ...current,
+      elevenLabs: {
+        modelId: current.elevenLabs?.modelId ?? 'eleven_multilingual_v2',
+        ...current.elevenLabs,
+        ...patch,
+      },
+    }));
+    setError('');
+    setNotice('Настройки ElevenLabs обновлены и добавлены в автосохранение.');
+  };
+
+  const generateTake = async (message: PrototypeMessage) => {
+    const estimatedCredits = message.text.length;
+    const provider = project.ttsProvider ?? 'elevenlabs';
+    if (provider === 'elevenlabs'
+      && !window.confirm(`Отправить реплику в ElevenLabs?\n\n${estimatedCredits} символов ≈ ${estimatedCredits} кредитов.`)) return;
+
+    setGenerating((current) => ({...current, [message.id]: true}));
+    setError('');
+    setNotice(provider === 'xtts'
+      ? `XTTS локально генерирует реплику «${message.author}». Первый запуск может быть долгим…`
+      : `Генерируется реплика «${message.author}»…`);
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          messageId: message.id,
+          role: message.role,
+          text: message.text,
+          provider,
+          modelId: project.elevenLabs?.modelId,
+          userVoiceId: project.elevenLabs?.userVoiceId?.trim() || undefined,
+          assistantVoiceId: project.elevenLabs?.assistantVoiceId?.trim() || undefined,
+        }),
+      });
+      const payload = await response.json() as {take?: AudioTake; error?: string};
+      if (!response.ok || !payload.take) throw new Error(payload.error || 'ElevenLabs не вернул аудиодубль.');
+      const newTake = payload.take;
+      setProject((current) => ({
+        ...current,
+        messages: current.messages.map((item) => {
+          if (item.id !== message.id) return item;
+          const history = item.takes ?? (item.take.audioPath ? [item.take] : []);
+          return {...item, take: newTake, takes: [...history, newTake]};
+        }),
+      }));
+      setNotice(`Новый дубль готов: ${(newTake.durationMs / 1000).toFixed(1)} сек.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Ошибка генерации аудио.');
+    } finally {
+      setGenerating((current) => ({...current, [message.id]: false}));
+    }
+  };
+
+  const activateTake = (messageId: string, takeId: string) => {
+    setProject((current) => ({
+      ...current,
+      messages: current.messages.map((message) => {
+        if (message.id !== messageId) return message;
+        const selected = message.takes?.find((take) => take.id === takeId);
+        return selected ? {...message, take: selected} : message;
+      }),
+    }));
+    setNotice('Активный дубль изменён, таймлайн пересчитан.');
+  };
+
+  const uploadImage = async (messageId: string, file: File) => {
+    setUploadingImage((current) => ({...current, [messageId]: true}));
+    setError('');
+    setNotice(`Загружается изображение «${file.name}»…`);
+    try {
+      if (file.size > 10_000_000) throw new Error('Файл изображения превышает 10 МБ.');
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('Поддерживаются только PNG, JPEG и WebP.');
+      const {width, height} = await getImageDimensions(file);
+      const response = await fetch('/api/image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.type,
+          'X-Message-Id': messageId,
+          'X-File-Name': encodeURIComponent(file.name),
+          'X-Image-Width': String(width),
+          'X-Image-Height': String(height),
+        },
+        body: file,
+      });
+      const payload = await response.json() as {image?: MessageImage; error?: string};
+      if (!response.ok || !payload.image) throw new Error(payload.error || 'Сервер не сохранил изображение.');
+      setProject((current) => ({
+        ...current,
+        messages: current.messages.map((message) => message.id === messageId
+          ? {...message, attachments: [...(message.attachments ?? []), payload.image!]}
+          : message),
+      }));
+      setNotice(`Изображение «${file.name}» добавлено в реплику.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Ошибка загрузки изображения.');
+    } finally {
+      setUploadingImage((current) => ({...current, [messageId]: false}));
+    }
+  };
+
+  const updateMessageImage = (messageId: string, imageId: string, patch: Partial<MessageImage>) => {
+    setProject((current) => ({
+      ...current,
+      messages: current.messages.map((message) => message.id === messageId
+        ? {...message, attachments: message.attachments?.map((image) => image.id === imageId ? {...image, ...patch} : image)}
+        : message),
+    }));
+    setNotice('Настройки изображения обновлены.');
+  };
+
+  const removeMessageImage = (messageId: string, imageId: string) => {
+    setProject((current) => ({
+      ...current,
+      messages: current.messages.map((message) => message.id === messageId
+        ? {...message, attachments: message.attachments?.filter((image) => image.id !== imageId)}
+        : message),
+    }));
+    setNotice('Изображение удалено из реплики. Файл оставлен в локальной папке проекта.');
+  };
+
+  const moveSelectedMessage = (offset: -1 | 1) => {
+    if (!selectedMessage) return;
+    setProject((current) => ({...current, messages: moveMessageBy(current.messages, selectedMessage.id, offset)}));
+    setNotice(offset < 0 ? 'Реплика перемещена раньше.' : 'Реплика перемещена позже.');
+  };
+
+  const moveMessageTo = (sourceId: string, targetId: string) => {
+    setProject((current) => ({...current, messages: reorderMessages(current.messages, sourceId, targetId)}));
+    setDraggedMessageId('');
+    setDropTargetId('');
+    setNotice('Порядок реплик изменён, таймлайн пересчитан.');
+  };
+
+  const deleteSelectedMessage = () => {
+    if (!selectedMessage || project.messages.length <= 1) return;
+    if (!window.confirm(`Удалить реплику «${selectedMessage.author}» из проекта?\n\nАудио и изображения останутся в локальной папке.`)) return;
+    const index = project.messages.findIndex((message) => message.id === selectedMessage.id);
+    const nextSelected = project.messages[index + 1] ?? project.messages[index - 1];
+    setProject((current) => ({...current, messages: current.messages.filter((message) => message.id !== selectedMessage.id)}));
+    setSelectedMessageId(nextSelected?.id ?? '');
+    setNotice('Реплика удалена из проекта. Локальные медиафайлы сохранены.');
+  };
+
+  const restoreDemo = () => {
+    setProject(prototypeProject);
+    setSelectedMessageId(prototypeProject.messages[0]?.id ?? '');
+    setError('');
+    setNotice('Демонстрационный проект восстановлен.');
+  };
+
+  return (
+    <main className="app-shell">
+      <header>
+        <div>
+          <span className="eyebrow">Редактор сценария · Alpha</span>
+          <h1>Chat Video Studio</h1>
+          <p>{project.title}</p>
+        </div>
+        <div className="header-actions">
+          <button className="secondary" type="button" onClick={restoreDemo}>Вернуть демо</button>
+          <button className="secondary" type="button" onClick={exportSnapshot}>Сохранить .json</button>
+          <button type="button" onClick={() => fileInput.current?.click()}>Импортировать</button>
+          <button type="button" disabled={renderJob?.status === 'rendering'} onClick={() => void renderVideo()}>
+            {renderJob?.status === 'rendering' ? 'Рендер…' : 'Экспорт MP4'}
+          </button>
+          {renderJob?.status === 'complete' && renderJob.url ? (
+            <a className="download-button" href={renderJob.url} download>Скачать MP4</a>
+          ) : null}
+          <input
+            ref={fileInput}
+            hidden
+            type="file"
+            accept=".md,.json,text/markdown,text/plain,application/json"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void importFile(file);
+              event.target.value = '';
+            }}
+          />
+        </div>
+      </header>
+      <div className={`notice ${error ? 'error' : ''}`}>{error || notice}</div>
+      <section className="workspace">
+        <aside>
+          <details className="theme-editor collapsible-editor">
+            <summary className="aside-title">
+              <h2>Оформление</h2>
+              <small>Сохраняется в проекте</small>
+            </summary>
+            <div className="editor-body">
+            <label>
+              Стиль чата
+              <select
+                value={project.theme?.presetId ?? defaultProjectTheme.presetId}
+                onChange={(event) => selectThemePreset(event.target.value as ThemePresetId)}
+              >
+                <option value="neutral">Нейтральный</option>
+                <option value="chatgpt">В духе ChatGPT</option>
+                <option value="gemini">В духе Gemini</option>
+              </select>
+            </label>
+            <div className="theme-text-fields">
+              <label>
+                Заголовок
+                <input
+                  value={project.theme?.chatTitle ?? defaultProjectTheme.chatTitle}
+                  onChange={(event) => updateTheme({chatTitle: event.target.value})}
+                />
+              </label>
+              <label>
+                Подпись
+                <input
+                  value={project.theme?.chatSubtitle ?? defaultProjectTheme.chatSubtitle}
+                  onChange={(event) => updateTheme({chatSubtitle: event.target.value})}
+                />
+              </label>
+            </div>
+            <div className="color-fields">
+              {([
+                ['canvas', 'Основной фон'],
+                ['chatBackground', 'Подложка чата'],
+                ['accent', 'Акцент'],
+                ['userBubble', 'Пользователь'],
+                ['assistantBubble', 'Ассистент'],
+              ] as const).map(([key, label]) => (
+                <label key={key}>
+                  <input
+                    type="color"
+                    value={project.theme?.[key] ?? (
+                      key === 'chatBackground'
+                        ? themePresets[project.theme?.presetId ?? 'neutral'].chat
+                        : themePresets[project.theme?.presetId ?? 'neutral'][key]
+                    )}
+                    onChange={(event) => updateTheme({[key]: event.target.value})}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            </div>
+          </details>
+          <details className="theme-editor video-editor collapsible-editor">
+            <summary className="aside-title">
+              <h2>Видеокадр</h2>
+              <small>{dimensions.width}×{dimensions.height}</small>
+            </summary>
+            <div className="editor-body">
+            <label>
+              Формат
+              <select
+                value={video.format}
+                onChange={(event) => updateVideo({format: event.target.value as VideoSettings['format']})}
+              >
+                {Object.entries(videoDimensions).map(([id, option]) => (
+                  <option key={id} value={id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="range-field">
+              <span>Масштаб интерфейса <b>{Math.round(video.uiScale * 100)}%</b></span>
+              <input
+                type="range"
+                min="0.7"
+                max="1.4"
+                step="0.05"
+                value={video.uiScale}
+                onChange={(event) => updateVideo({uiScale: Number(event.target.value)})}
+              />
+            </label>
+            <label className="range-field">
+              <span>Скорость индикатора набора <b>{video.typingSpeed.toFixed(1)}×</b></span>
+              <input
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.1"
+                value={video.typingSpeed}
+                onChange={(event) => updateVideo({typingSpeed: Number(event.target.value)})}
+              />
+            </label>
+            <label>
+              Частота кадров
+              <select
+                value={project.fps}
+                onChange={(event) => setProject((current) => ({...current, fps: Number(event.target.value)}))}
+              >
+                {[24, 25, 30, 50, 60].map((fps) => <option key={fps} value={fps}>{fps} FPS</option>)}
+              </select>
+            </label>
+            </div>
+          </details>
+          <details className="theme-editor video-editor collapsible-editor">
+            <summary className="aside-title">
+              <h2>Озвучка</h2>
+              <small>{project.ttsProvider === 'xtts' ? 'Локально' : 'Облако'}</small>
+            </summary>
+            <div className="editor-body">
+            <label>
+              Движок новых дублей
+              <select
+                value={project.ttsProvider ?? 'elevenlabs'}
+                onChange={(event) => {
+                  const ttsProvider = event.target.value as TtsProvider;
+                  setProject((current) => ({...current, ttsProvider}));
+                  setNotice(ttsProvider === 'xtts'
+                    ? 'Выбран локальный XTTS v2. ElevenLabs-кредиты не расходуются.'
+                    : 'Выбран ElevenLabs. Перед генерацией будет показан расход кредитов.');
+                }}
+              >
+                <option value="elevenlabs">ElevenLabs</option>
+                <option value="xtts">XTTS v2 · локально</option>
+              </select>
+            </label>
+            {(project.ttsProvider ?? 'elevenlabs') === 'elevenlabs' ? (
+              <div className="elevenlabs-settings">
+                <label>
+                  Модель ElevenLabs
+                  <select
+                    value={elevenLabs.modelId}
+                    onChange={(event) => updateElevenLabs({modelId: event.target.value as ElevenLabsModelId})}
+                  >
+                    <option value="eleven_multilingual_v2">Multilingual v2 · качество</option>
+                    <option value="eleven_flash_v2_5">Flash v2.5 · быстро и дешевле</option>
+                    <option value="eleven_turbo_v2_5">Turbo v2.5 · устаревающая</option>
+                  </select>
+                </label>
+                <label>
+                  Voice ID пользователя
+                  <input
+                    value={elevenLabs.userVoiceId ?? ''}
+                    placeholder="Из .env.local"
+                    spellCheck={false}
+                    onChange={(event) => updateElevenLabs({userVoiceId: event.target.value})}
+                  />
+                </label>
+                <label>
+                  Voice ID ассистента
+                  <input
+                    value={elevenLabs.assistantVoiceId ?? ''}
+                    placeholder="Из .env.local"
+                    spellCheck={false}
+                    onChange={(event) => updateElevenLabs({assistantVoiceId: event.target.value})}
+                  />
+                </label>
+              </div>
+            ) : null}
+            <p className="provider-note">
+              {(project.ttsProvider ?? 'elevenlabs') === 'xtts'
+                ? 'XTTS использует два локальных образца из .env.local. Тайминги слов пока рассчитываются приблизительно.'
+                : 'Пустой Voice ID использует соответствующее значение из .env.local.'}
+            </p>
+            </div>
+          </details>
+          <section className="scenario-editor">
+            <div className="aside-title">
+              <h2>Сценарий</h2>
+              <small>{(timeline.durationMs / 1000).toFixed(1)} сек. · {timeline.messages.length}</small>
+            </div>
+            {selectedMessage ? (
+              <div className="scenario-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={selectedMessageIndex <= 0}
+                  onClick={() => moveSelectedMessage(-1)}
+                >← Раньше</button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={selectedMessageIndex >= timeline.messages.length - 1}
+                  onClick={() => moveSelectedMessage(1)}
+                >Позже →</button>
+                <button
+                  type="button"
+                  className="secondary delete-message"
+                  disabled={timeline.messages.length <= 1}
+                  title={timeline.messages.length <= 1 ? 'Нельзя удалить единственную реплику' : 'Удалить реплику из проекта'}
+                  onClick={deleteSelectedMessage}
+                >Удалить</button>
+              </div>
+            ) : null}
+            {selectedMessage ? (
+              <article
+                key={selectedMessage.id}
+                className="selected-message"
+              >
+              <div className="message-heading">
+                <span>{String(selectedMessageIndex + 1).padStart(2, '0')} · {selectedMessage.author}</span>
+                <b className={generating[selectedMessage.id] ? 'audio-generating' : selectedMessage.take.audioPath ? 'audio-ready' : ''}>
+                  {generating[selectedMessage.id] ? 'Озвучивается' : selectedMessage.take.audioPath ? 'Аудио готово' : 'Без аудио'}
+                </b>
+              </div>
+              <label className="author-field">
+                Подпись автора
+                <input
+                  value={selectedMessage.author}
+                  maxLength={100}
+                  placeholder={selectedMessage.role === 'user' ? 'Пользователь' : 'ChatGPT'}
+                  onChange={(event) => updateAuthor(selectedMessage.role, event.target.value)}
+                />
+                <small>Применяется ко всем репликам этой роли</small>
+              </label>
+              <textarea
+                aria-label={`Текст реплики ${selectedMessageIndex + 1}`}
+                value={selectedMessage.text}
+                onChange={(event) => updateMessage(selectedMessage.id, event.target.value)}
+              />
+              <small>{(selectedMessage.take.durationMs / 1000).toFixed(1)} сек. · {selectedMessage.take.words.length} слов</small>
+              {selectedMessage.take.audioPath ? (
+                <small className="alignment-label">
+                  {selectedMessage.take.alignment === 'whisper'
+                    ? 'Точные тайминги · Whisper'
+                    : selectedMessage.take.alignment === 'provider'
+                      ? 'Точные тайминги · провайдер'
+                      : 'Приблизительные тайминги'}
+                </small>
+              ) : null}
+              <div className="take-controls">
+                <button
+                  type="button"
+                  className={generating[selectedMessage.id] ? 'generating-button' : ''}
+                  disabled={generating[selectedMessage.id] || !selectedMessage.text.trim()}
+                  onClick={() => void generateTake(selectedMessage)}
+                >
+                  {generating[selectedMessage.id] ? 'Генерация…' : selectedMessage.take.audioPath ? 'Новый дубль' : 'Озвучить'}
+                </button>
+                {(selectedMessage.takes?.length || 0) > 0 ? (
+                  <select
+                    aria-label={`Дубль реплики ${selectedMessageIndex + 1}`}
+                    value={selectedMessage.take.audioPath ? selectedMessage.take.id : ''}
+                    onChange={(event) => activateTake(selectedMessage.id, event.target.value)}
+                  >
+                    {!selectedMessage.take.audioPath ? <option value="">Черновой тайминг</option> : null}
+                    {selectedMessage.takes?.map((take, takeIndex) => (
+                      <option
+                        key={take.id}
+                        value={take.id}
+                      >
+                        Дубль {takeIndex + 1} · {(take.durationMs / 1000).toFixed(1)} сек.
+                        {take.sourceText && take.sourceText !== selectedMessage.text ? ' · старый текст' : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
+              <section className="message-images">
+                <div className="message-images-heading">
+                  <b>Изображения</b>
+                  <button
+                    type="button"
+                    className={uploadingImage[selectedMessage.id] ? 'secondary generating-button' : 'secondary'}
+                    disabled={uploadingImage[selectedMessage.id]}
+                    onClick={() => imageInput.current?.click()}
+                  >{uploadingImage[selectedMessage.id] ? 'Загрузка…' : 'Добавить'}</button>
+                  <input
+                    ref={imageInput}
+                    hidden
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void uploadImage(selectedMessage.id, file);
+                      event.target.value = '';
+                    }}
+                  />
+                </div>
+                {(selectedMessage.attachments ?? []).map((image) => (
+                  <div className="message-image-card" key={image.id}>
+                    <img src={image.path} alt={image.fileName} />
+                    <div className="message-image-fields">
+                      <small title={image.fileName}>{image.fileName}</small>
+                      <select
+                        aria-label={`Расположение изображения ${image.fileName}`}
+                        value={image.position}
+                        onChange={(event) => updateMessageImage(selectedMessage.id, image.id, {position: event.target.value as MessageImage['position']})}
+                      >
+                        <option value="before-text">Над текстом</option>
+                        <option value="after-text">Под текстом</option>
+                      </select>
+                      <select
+                        aria-label={`Масштабирование изображения ${image.fileName}`}
+                        value={image.fit}
+                        onChange={(event) => updateMessageImage(selectedMessage.id, image.id, {fit: event.target.value as MessageImage['fit']})}
+                      >
+                        <option value="contain">Вписать полностью</option>
+                        <option value="cover">Заполнить с обрезкой</option>
+                      </select>
+                      <select
+                        aria-label={`Появление изображения ${image.fileName}`}
+                        value={image.reveal}
+                        onChange={(event) => updateMessageImage(selectedMessage.id, image.id, {reveal: event.target.value as MessageImage['reveal']})}
+                      >
+                        <option value="bubble">Вместе с пузырём</option>
+                        <option value="speech">В начале озвучки</option>
+                        <option value="after-text">После текста</option>
+                      </select>
+                    </div>
+                    <button className="secondary image-remove" type="button" onClick={() => removeMessageImage(selectedMessage.id, image.id)}>Убрать</button>
+                  </div>
+                ))}
+                {(selectedMessage.attachments?.length ?? 0) === 0 ? <small className="no-images">Изображений нет</small> : null}
+              </section>
+              </article>
+            ) : <p className="empty-message">Выберите реплику на таймлайне.</p>}
+          </section>
+        </aside>
+        <div className="stage">
+          <div
+            className="preview"
+            style={{
+              width: video.format === 'landscape' ? 'min(100%, 900px)' : video.format === 'square' ? 'min(100%, 720px)' : 'min(100%, 480px)',
+              aspectRatio: `${dimensions.width} / ${dimensions.height}`,
+            }}
+          >
+            <Player
+              ref={player}
+              component={ChatVideo}
+              inputProps={{project}}
+              durationInFrames={timeline.durationInFrames}
+              compositionWidth={dimensions.width}
+              compositionHeight={dimensions.height}
+              fps={project.fps}
+              controls
+              loop
+              style={{width: '100%', height: '100%'}}
+            />
+          </div>
+          <section className="timeline-editor">
+            <div className="timeline-header">
+              <div>
+                <span className="eyebrow">Таймлайн</span>
+                <h2>{selectedMessage ? `${selectedMessage.author} · ${(selectedMessage.take.durationMs / 1000).toFixed(1)} сек.` : 'Нет реплик'}</h2>
+              </div>
+              {selectedMessage ? (
+                <button type="button" onClick={() => {
+                  player.current?.seekTo(Math.round(selectedMessage.speechStartMs * project.fps / 1000));
+                  player.current?.play();
+                }}>Показать в видео</button>
+              ) : null}
+            </div>
+            <div className="timeline-tools" aria-label="Масштаб таймлайна">
+              <button type="button" className="secondary" aria-label="Уменьшить масштаб таймлайна" disabled={!timelineFit && timelineZoom <= 0.5} onClick={() => changeTimelineZoom(-1)}>−</button>
+              <span>{timelineFit ? 'Весь таймлайн' : `${Math.round(timelineZoom * 100)}%`}</span>
+              <button type="button" className="secondary" aria-label="Увеличить масштаб таймлайна" disabled={!timelineFit && timelineZoom >= 4} onClick={() => changeTimelineZoom(1)}>+</button>
+              <button type="button" className="secondary fit-button" disabled={timelineFit} onClick={() => setTimelineFit(true)}>Вместить всё</button>
+            </div>
+            <div className="timeline-scroll">
+              <div
+                className={`timeline-track ${timelineFit ? 'fit' : ''}`}
+                aria-label="Границы клипов"
+                style={timelineFit ? undefined : {width: `${Math.max(100, timeline.durationMs / 1000 * 36 * timelineZoom)}px`}}
+              >
+                {timeline.messages.map((message, index) => (
+                  <button
+                    key={message.id}
+                    data-message-id={message.id}
+                    type="button"
+                    draggable
+                    className={[
+                      generating[message.id] ? 'audio-generating' : message.take.audioPath ? 'audio-ready' : 'audio-missing',
+                      message.id === selectedMessage?.id ? 'active' : '',
+                      message.id === draggedMessageId ? 'dragging' : '',
+                      message.id === dropTargetId && message.id !== draggedMessageId ? 'drop-target' : '',
+                    ].filter(Boolean).join(' ')}
+                    style={{flexGrow: Math.max(message.endMs - message.startMs, 1)}}
+                    title={`${message.author}: ${(message.startMs / 1000).toFixed(1)}–${(message.endMs / 1000).toFixed(1)} сек. · ${generating[message.id] ? 'идёт озвучка' : message.take.audioPath ? 'аудио готово' : 'без аудио'} · перетащите для изменения порядка`}
+                    aria-label={`Реплика ${index + 1}, ${generating[message.id] ? 'идёт озвучка' : message.take.audioPath ? 'аудио готово' : 'без аудио'}`}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('text/plain', message.id);
+                      setDraggedMessageId(message.id);
+                      setSelectedMessageId(message.id);
+                    }}
+                    onDragEnter={() => setDropTargetId(message.id)}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const sourceId = event.dataTransfer.getData('text/plain') || draggedMessageId;
+                      if (sourceId && sourceId !== message.id) moveMessageTo(sourceId, message.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedMessageId('');
+                      setDropTargetId('');
+                    }}
+                    onClick={() => {
+                      setSelectedMessageId(message.id);
+                      player.current?.seekTo(Math.round(message.startMs * project.fps / 1000));
+                    }}
+                  >{index + 1}</button>
+                ))}
+              </div>
+            </div>
+            {selectedMessage ? (
+              <>
+                <div className="clip-ruler">
+                  <span>{(selectedMessage.startMs / 1000).toFixed(2)} с</span>
+                  <div className="waveform" aria-label="Форма волны активного дубля">
+                    {Array.from({length: 48}, (_, index) => {
+                      const word = selectedMessage.take.words[index % Math.max(selectedMessage.take.words.length, 1)];
+                      const seed = word ? word.text.length + index * 7 : index * 7;
+                      return <i key={index} style={{height: `${22 + (seed * 13) % 72}%`}} />;
+                    })}
+                  </div>
+                  <span>{(selectedMessage.endMs / 1000).toFixed(2)} с</span>
+                </div>
+                <div className="take-comparison">
+                  {(selectedMessage.takes?.length ? selectedMessage.takes : [selectedMessage.take]).map((take, index) => (
+                    <div className={take.id === selectedMessage.take.id ? 'take-row active' : 'take-row'} key={take.id}>
+                      <div><b>Дубль {index + 1}</b><small>{(take.durationMs / 1000).toFixed(1)} сек. · {take.alignment ?? 'approximate'}</small></div>
+                      {take.audioPath ? <audio controls preload="metadata" src={take.audioPath} /> : <span className="no-audio">Без аудио</span>}
+                      <button
+                        className="secondary"
+                        type="button"
+                        disabled={take.id === selectedMessage.take.id}
+                        title={take.sourceText && take.sourceText !== selectedMessage.text
+                          ? 'Дубль создан для предыдущей версии текста; тайминги могут не совпадать'
+                          : undefined}
+                        onClick={() => activateTake(selectedMessage.id, take.id)}
+                      >{take.id === selectedMessage.take.id
+                        ? 'Активен'
+                        : take.sourceText && take.sourceText !== selectedMessage.text
+                          ? 'Активировать старый'
+                          : 'Активировать'}</button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </section>
+        </div>
+      </section>
+    </main>
+  );
+};
+
+createRoot(document.getElementById('root')!).render(<App />);

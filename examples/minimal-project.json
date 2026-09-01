@@ -1,0 +1,116 @@
+{
+  "format": "chat-video-project",
+  "formatVersion": 1,
+  "id": "project-demo-001",
+  "title": "Демонстрационный диалог",
+  "createdAt": "2026-08-31T10:00:00Z",
+  "updatedAt": "2026-08-31T10:00:00Z",
+  "source": {
+    "platform": "markdown",
+    "title": "Демонстрационный диалог",
+    "originalFile": "source/original.md"
+  },
+  "participants": [
+    {
+      "id": "user",
+      "name": "Пользователь",
+      "role": "user",
+      "defaultVoice": {
+        "provider": "elevenlabs",
+        "voiceId": "replace-with-elevenlabs-voice-id",
+        "modelId": "replace-with-model-id"
+      },
+      "visual": {
+        "side": "right",
+        "bubbleColor": "#E8F0FE",
+        "textColor": "#202124"
+      }
+    },
+    {
+      "id": "assistant",
+      "name": "ИИ",
+      "role": "assistant",
+      "defaultVoice": {
+        "provider": "imported"
+      },
+      "visual": {
+        "side": "left",
+        "bubbleColor": "#F1F3F4",
+        "textColor": "#202124"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg-001",
+      "participantId": "user",
+      "text": "Как устроено это приложение?",
+      "enabled": true,
+      "prePauseMs": 300,
+      "postPauseMs": 350,
+      "segments": [
+        {
+          "id": "seg-001",
+          "text": "Как устроено это приложение?",
+          "status": "needs_audio",
+          "takes": []
+        }
+      ],
+      "visual": {
+        "revealMode": "word",
+        "typingIndicator": true,
+        "typingDurationMs": 500
+      }
+    },
+    {
+      "id": "msg-002",
+      "participantId": "assistant",
+      "text": "Оно превращает текстовый диалог в синхронизированное видео.",
+      "enabled": true,
+      "prePauseMs": 250,
+      "postPauseMs": 500,
+      "segments": [
+        {
+          "id": "seg-002",
+          "text": "Оно превращает текстовый диалог в синхронизированное видео.",
+          "status": "needs_audio",
+          "takes": []
+        }
+      ],
+      "visual": {
+        "revealMode": "word",
+        "typingIndicator": true,
+        "typingDurationMs": 700
+      }
+    }
+  ],
+  "theme": {
+    "presetId": "minimal-light",
+    "tokens": {
+      "canvasBackground": "#DDE3EA",
+      "browserBackground": "#FFFFFF",
+      "chatBackground": "#FFFFFF",
+      "textColor": "#202124",
+      "accentColor": "#1A73E8",
+      "fontFamily": "Inter",
+      "fontSize": 28,
+      "messageWidth": 820,
+      "borderRadius": 22
+    }
+  },
+  "timeline": {
+    "fps": 30,
+    "scrollAnchorRatio": 0.78,
+    "defaultPrePauseMs": 250,
+    "defaultPostPauseMs": 350
+  },
+  "export": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "format": "mp4",
+    "videoCodec": "h264",
+    "audioCodec": "aac",
+    "exportSrt": true
+  }
+}

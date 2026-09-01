@@ -1,0 +1,5 @@
+# PyTorch and torchaudio are installed separately from the CUDA 12.4 wheel index.
+coqui-tts==0.27.5
+# Coqui 0.27.5 currently imports an API removed in Transformers 5.x.
+transformers==4.57.6
+faster-whisper==1.2.1

@@ -1,0 +1,41 @@
+{
+  "audioPath": "audio/elevenlabs-user.mp3",
+  "durationMs": 3529,
+  "words": [
+    {
+      "text": "Как",
+      "startMs": 0,
+      "endMs": 244
+    },
+    {
+      "text": "превратить",
+      "startMs": 302,
+      "endMs": 801
+    },
+    {
+      "text": "сохранённый",
+      "startMs": 824,
+      "endMs": 1382
+    },
+    {
+      "text": "диалог",
+      "startMs": 1440,
+      "endMs": 1869
+    },
+    {
+      "text": "в",
+      "startMs": 2020,
+      "endMs": 2090
+    },
+    {
+      "text": "готовое",
+      "startMs": 2183,
+      "endMs": 2694
+    },
+    {
+      "text": "видео?",
+      "startMs": 2740,
+      "endMs": 3529
+    }
+  ]
+}

@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.chat-video-studio/schemas/project.schema.json",
+  "title": "Chat Video Studio Project",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "formatVersion", "id", "title", "participants", "messages", "theme", "timeline", "export"],
+  "properties": {
+    "format": { "const": "chat-video-project" },
+    "formatVersion": { "type": "integer", "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "platform": { "enum": ["chatgpt", "gemini", "markdown", "manual", "other"] },
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "originalFile": { "type": "string" }
+      }
+    },
+    "participants": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/participant" }
+    },
+    "messages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/message" }
+    },
+    "theme": { "$ref": "#/$defs/theme" },
+    "timeline": { "$ref": "#/$defs/timelineSettings" },
+    "export": { "$ref": "#/$defs/exportSettings" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "role"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "role": { "enum": ["user", "assistant", "system", "other"] },
+        "avatarPath": { "type": "string" },
+        "defaultVoice": { "$ref": "#/$defs/voiceConfig" },
+        "visual": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "side": { "enum": ["left", "right", "full"] },
+            "bubbleColor": { "$ref": "#/$defs/color" },
+            "textColor": { "$ref": "#/$defs/color" }
+          }
+        }
+      }
+    },
+    "voiceConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider"],
+      "properties": {
+        "provider": { "enum": ["elevenlabs", "imported", "recorded", "silent"] },
+        "voiceId": { "type": "string" },
+        "modelId": { "type": "string" },
+        "settings": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "participantId", "text", "enabled", "segments", "visual"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "participantId": { "$ref": "#/$defs/id" },
+        "text": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "prePauseMs": { "type": "integer", "minimum": 0, "default": 250 },
+        "postPauseMs": { "type": "integer", "minimum": 0, "default": 350 },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/segment" }
+        },
+        "visual": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["revealMode", "typingIndicator"],
+          "properties": {
+            "revealMode": { "enum": ["word", "character", "sentence", "instant"] },
+            "typingIndicator": { "type": "boolean" },
+            "typingDurationMs": { "type": "integer", "minimum": 0, "default": 500 }
+          }
+        }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "status", "takes"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "text": { "type": "string" },
+        "status": {
+          "enum": ["draft", "needs_audio", "generating", "generation_failed", "needs_alignment", "ready", "stale_audio"]
+        },
+        "voiceOverride": { "$ref": "#/$defs/voiceConfig" },
+        "activeTakeId": { "$ref": "#/$defs/id" },
+        "takes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/audioTake" }
+        }
+      }
+    },
+    "audioTake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "provider", "textHash", "audioPath", "durationMs", "createdAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "label": { "type": "string", "maxLength": 100 },
+        "provider": { "enum": ["elevenlabs", "imported", "recorded"] },
+        "modelId": { "type": "string" },
+        "voiceId": { "type": "string" },
+        "textHash": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+        "audioPath": { "type": "string", "minLength": 1 },
+        "timingPath": { "type": "string" },
+        "durationMs": { "type": "integer", "minimum": 1 },
+        "settings": { "type": "object", "additionalProperties": true },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["presetId", "tokens"],
+      "properties": {
+        "presetId": { "$ref": "#/$defs/id" },
+        "customThemePath": { "type": "string" },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "canvasBackground": { "$ref": "#/$defs/color" },
+            "browserBackground": { "$ref": "#/$defs/color" },
+            "chatBackground": { "$ref": "#/$defs/color" },
+            "textColor": { "$ref": "#/$defs/color" },
+            "accentColor": { "$ref": "#/$defs/color" },
+            "fontFamily": { "type": "string" },
+            "fontSize": { "type": "number", "minimum": 8, "maximum": 120 },
+            "messageWidth": { "type": "number", "minimum": 100 },
+            "borderRadius": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "timelineSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fps", "scrollAnchorRatio"],
+      "properties": {
+        "fps": { "enum": [24, 25, 30, 50, 60] },
+        "scrollAnchorRatio": { "type": "number", "minimum": 0.5, "maximum": 0.95 },
+        "defaultPrePauseMs": { "type": "integer", "minimum": 0 },
+        "defaultPostPauseMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "exportSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "fps", "format", "videoCodec", "audioCodec"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 320 },
+        "height": { "type": "integer", "minimum": 320 },
+        "fps": { "enum": [24, 25, 30, 50, 60] },
+        "format": { "const": "mp4" },
+        "videoCodec": { "const": "h264" },
+        "audioCodec": { "const": "aac" },
+        "exportSrt": { "type": "boolean" }
+      }
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+    }
+  }
+}

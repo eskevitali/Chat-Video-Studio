@@ -1,0 +1,131 @@
+{
+  "audioPath": "audio/elevenlabs-assistant.mp3",
+  "durationMs": 17601,
+  "words": [
+    {
+      "text": "Приложение",
+      "startMs": 0,
+      "endMs": 824
+    },
+    {
+      "text": "создаёт",
+      "startMs": 894,
+      "endMs": 1416
+    },
+    {
+      "text": "виртуальное",
+      "startMs": 1486,
+      "endMs": 2136
+    },
+    {
+      "text": "окно",
+      "startMs": 2206,
+      "endMs": 2519
+    },
+    {
+      "text": "браузера,",
+      "startMs": 2577,
+      "endMs": 3355
+    },
+    {
+      "text": "озвучивает",
+      "startMs": 3878,
+      "endMs": 4621
+    },
+    {
+      "text": "реплики",
+      "startMs": 4702,
+      "endMs": 5306
+    },
+    {
+      "text": "и",
+      "startMs": 5689,
+      "endMs": 5793
+    },
+    {
+      "text": "показывает",
+      "startMs": 5863,
+      "endMs": 6525
+    },
+    {
+      "text": "каждое",
+      "startMs": 6594,
+      "endMs": 6954
+    },
+    {
+      "text": "слово",
+      "startMs": 7012,
+      "endMs": 7465
+    },
+    {
+      "text": "синхронно",
+      "startMs": 7674,
+      "endMs": 8359
+    },
+    {
+      "text": "с",
+      "startMs": 8382,
+      "endMs": 8429
+    },
+    {
+      "text": "голосом.",
+      "startMs": 8499,
+      "endMs": 9253
+    },
+    {
+      "text": "Когда",
+      "startMs": 9776,
+      "endMs": 10170
+    },
+    {
+      "text": "активное",
+      "startMs": 10252,
+      "endMs": 10809
+    },
+    {
+      "text": "сообщение",
+      "startMs": 10879,
+      "endMs": 11494
+    },
+    {
+      "text": "становится",
+      "startMs": 11540,
+      "endMs": 12341
+    },
+    {
+      "text": "длиннее",
+      "startMs": 12481,
+      "endMs": 13142
+    },
+    {
+      "text": "видимой",
+      "startMs": 13212,
+      "endMs": 13665
+    },
+    {
+      "text": "области,",
+      "startMs": 13758,
+      "endMs": 14582
+    },
+    {
+      "text": "чат",
+      "startMs": 14965,
+      "endMs": 15256
+    },
+    {
+      "text": "плавно",
+      "startMs": 15325,
+      "endMs": 15755
+    },
+    {
+      "text": "прокручивается",
+      "startMs": 15801,
+      "endMs": 16695
+    },
+    {
+      "text": "вниз.",
+      "startMs": 16753,
+      "endMs": 17601
+    }
+  ]
+}
