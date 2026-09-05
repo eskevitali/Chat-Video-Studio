@@ -696,6 +696,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
   const takeHistory = selectedMessage
     ? (selectedMessage.takes?.length ? selectedMessage.takes : [selectedMessage.take])
     : [];
+  const takeHistoryNewestFirst = [...takeHistory].reverse();
 
   const renderTakePanel = () => selectedMessage ? (
     <div className="take-panel">
@@ -720,10 +721,10 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
         </small>
       </div>
       <div className="take-comparison">
-        {takeHistory.map((take, index) => (
+        {takeHistoryNewestFirst.map((take) => (
           <div className={take.id === selectedMessage.take.id ? 'take-row active' : 'take-row'} key={take.id}>
             <div>
-              <b>Дубль {index + 1}{take.id === selectedMessage.take.id ? ' · активен' : ''}</b>
+              <b>Дубль {takeHistory.indexOf(take) + 1}{take.id === selectedMessage.take.id ? ' · активен' : ''}</b>
               <small>{(take.durationMs / 1000).toFixed(1)} сек. · {take.alignment ?? 'approximate'}</small>
             </div>
             {take.audioPath ? <audio controls preload="metadata" src={take.audioPath} /> : <span className="no-audio">Без аудио</span>}
@@ -1273,8 +1274,8 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
       <nav className="mobile-nav" aria-label="Разделы редактора">
         {([
           ['script', 'Сценарий'],
-          ['preview', 'Превью'],
           ['timeline', 'Таймлайн'],
+          ['preview', 'Превью'],
           ['settings', 'Настройки'],
         ] as const).map(([id, label]) => (
           <button
