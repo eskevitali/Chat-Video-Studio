@@ -350,12 +350,18 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
   };
 
   const updateTheme = (patch: Partial<ProjectTheme>) => {
-    setProject((current) => ({
-      ...current,
-      theme: {...defaultProjectTheme, ...current.theme, ...patch},
-    }));
+    setProject((current) => {
+      const chatTitle = patch.chatTitle !== undefined ? patch.chatTitle.trim() : undefined;
+      return {
+        ...current,
+        title: chatTitle || current.title,
+        theme: {...defaultProjectTheme, ...current.theme, ...patch, ...(chatTitle !== undefined ? {chatTitle} : {})},
+      };
+    });
     setError('');
-    setNotice('Стиль обновлён и добавлен в автосохранение.');
+    setNotice(patch.chatTitle !== undefined
+      ? 'Заголовок сохранён как название проекта.'
+      : 'Стиль обновлён и добавлен в автосохранение.');
   };
 
   const selectThemePreset = (presetId: ThemePresetId) => {
@@ -836,9 +842,10 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
             </label>
             <div className="theme-text-fields">
               <label>
-                Заголовок
+                Заголовок проекта
                 <input
-                  value={project.theme?.chatTitle ?? defaultProjectTheme.chatTitle}
+                  value={project.theme?.chatTitle ?? project.title}
+                  placeholder="Как проект виден в списке"
                   onChange={(event) => updateTheme({chatTitle: event.target.value})}
                 />
               </label>

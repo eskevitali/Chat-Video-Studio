@@ -49,7 +49,7 @@ export const createWorkspace = ({root, environment = {}} = {}) => {
 
   const metaOf = (projectId, snapshot) => ({
     id: projectId,
-    title: String(snapshot.project?.title || 'Без названия').slice(0, 120),
+    title: String(snapshot.project?.title || snapshot.project?.theme?.chatTitle || 'Без названия').slice(0, 120),
     durationMs: projectDurationMs(snapshot.project),
     updatedAt: snapshot.savedAt || new Date().toISOString(),
   });
