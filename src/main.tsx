@@ -13,7 +13,7 @@ import {LoginScreen, type Session} from './login';
 import {SpeechTagEditor} from './speech-tag-editor';
 import {defaultProjectTheme, themePresets} from './remotion/theme';
 import {defaultVideoSettings, getVideoDimensions, resolveVideoSettings, videoDimensions} from './domain/video';
-import {moveMessageBy, reorderMessages} from './domain/messages';
+import {blankMessage, cloneMessage, cloneTakeInMessage, insertMessageAfter, moveMessageBy, reorderMessages} from './domain/messages';
 import './styles.css';
 
 const STORAGE_KEY = 'chat-video-studio.editor-snapshot.v1';
@@ -531,6 +531,48 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     setNotice('Порядок реплик изменён, таймлайн пересчитан.');
   };
 
+  const authorForRole = (role: 'user' | 'assistant') =>
+    project.messages.find((message) => message.role === role)?.author
+    ?? (role === 'user' ? 'Пользователь' : 'Ассистент');
+
+  const addMessage = (role: 'user' | 'assistant') => {
+    if (project.messages.length >= 500) {
+      setError('В одном проекте допускается не больше 500 реплик.');
+      return;
+    }
+    const created = blankMessage({role, author: authorForRole(role), text: ''});
+    setProject((current) => ({
+      ...current,
+      messages: insertMessageAfter(current.messages, selectedMessage?.id, created),
+    }));
+    setSelectedMessageId(created.id);
+    setNotice(role === 'user' ? 'Добавлена реплика пользователя.' : 'Добавлена реплика ассистента.');
+    setError('');
+  };
+
+  const cloneSelectedMessage = () => {
+    if (!selectedMessage) return;
+    if (project.messages.length >= 500) {
+      setError('В одном проекте допускается не больше 500 реплик.');
+      return;
+    }
+    const copy = cloneMessage(selectedMessage);
+    setProject((current) => ({
+      ...current,
+      messages: insertMessageAfter(current.messages, selectedMessage.id, copy),
+    }));
+    setSelectedMessageId(copy.id);
+    setNotice('Реплика скопирована вместе с дублями.');
+  };
+
+  const cloneTake = (messageId: string, takeId: string) => {
+    setProject((current) => ({
+      ...current,
+      messages: current.messages.map((message) => message.id === messageId ? cloneTakeInMessage(message, takeId) : message),
+    }));
+    setNotice('Дубль скопирован. Можно оставить как запасной или озвучить заново.');
+  };
+
   const deleteSelectedMessage = () => {
     if (!selectedMessage || project.messages.length <= 1) return;
     if (!window.confirm(`Удалить реплику «${selectedMessage.author}» из проекта?\n\nАудио и изображения останутся в локальной папке.`)) return;
@@ -636,21 +678,28 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
               <small>{(take.durationMs / 1000).toFixed(1)} сек. · {take.alignment ?? 'approximate'}</small>
             </div>
             {take.audioPath ? <audio controls preload="metadata" src={take.audioPath} /> : <span className="no-audio">Без аудио</span>}
-            <button
-              className="secondary"
-              type="button"
-              disabled={take.id === selectedMessage.take.id || !take.audioPath}
-              title={take.sourceText && take.sourceText !== selectedMessage.text
-                ? 'Дубль создан для предыдущей версии текста; тайминги могут не совпадать'
-                : undefined}
-              onClick={() => activateTake(selectedMessage.id, take.id)}
-            >
-              {take.id === selectedMessage.take.id
-                ? 'Активен'
-                : take.sourceText && take.sourceText !== selectedMessage.text
-                  ? 'Активировать старый'
-                  : 'Активировать'}
-            </button>
+            <div className="take-row-actions">
+              <button
+                className="secondary"
+                type="button"
+                disabled={take.id === selectedMessage.take.id || !take.audioPath}
+                title={take.sourceText && take.sourceText !== selectedMessage.text
+                  ? 'Дубль создан для предыдущей версии текста; тайминги могут не совпадать'
+                  : undefined}
+                onClick={() => activateTake(selectedMessage.id, take.id)}
+              >
+                {take.id === selectedMessage.take.id
+                  ? 'Активен'
+                  : take.sourceText && take.sourceText !== selectedMessage.text
+                    ? 'Активировать старый'
+                    : 'Активировать'}
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => cloneTake(selectedMessage.id, take.id)}
+              >Клонировать дубль</button>
+            </div>
           </div>
         ))}
       </div>
@@ -905,6 +954,9 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
             </div>
             {selectedMessage ? (
               <div className="scenario-actions">
+                <button type="button" className="secondary" onClick={() => addMessage('user')}>+ Пользователь</button>
+                <button type="button" className="secondary" onClick={() => addMessage('assistant')}>+ Ассистент</button>
+                <button type="button" className="secondary" onClick={cloneSelectedMessage}>Клонировать реплику</button>
                 <button
                   type="button"
                   className="secondary"

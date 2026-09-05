@@ -227,7 +227,10 @@ aside h2 { margin: 0 0 14px; font-size: 1.05rem; color: var(--color-primary); }
 .scenario-editor::after { content: 'Потяните угол, чтобы изменить высоту'; display: block; margin-top: 8px; color: var(--color-muted); font-size: 10px; text-align: right; pointer-events: none; flex: 0 0 auto; }
 .scenario-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
 .scenario-actions button { padding: 7px 8px; border-radius: 5px; font-size: 12px; min-height: 40px; min-width: 0; }
-.scenario-actions .delete-message { grid-column: 1 / -1; color: var(--color-danger); border-color: var(--color-danger); }
+.scenario-actions button:nth-child(3),
+.scenario-actions .delete-message { grid-column: 1 / -1; }
+.scenario-actions .delete-message { color: var(--color-danger); border-color: var(--color-danger); }
+.take-row-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
 article { min-width: 0; max-width: 100%; padding: 16px; border-radius: var(--radius); background: var(--color-surface); border: 1px solid var(--color-border); margin-top: 12px; overflow-wrap: anywhere; }
 article { cursor: pointer; transition: border-color .15s, background .15s; }
