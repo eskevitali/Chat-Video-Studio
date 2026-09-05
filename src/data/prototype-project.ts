@@ -12,7 +12,7 @@ export const prototypeProject: PrototypeProject = {
   theme: {
     presetId: 'neutral',
     chatTitle: 'Новый диалог',
-    chatSubtitle: 'Симулятор чата',
+    chatSubtitle: '',
   },
   video: {format: 'portrait', uiScale: 1, typingSpeed: 1},
   ttsProvider: 'elevenlabs',

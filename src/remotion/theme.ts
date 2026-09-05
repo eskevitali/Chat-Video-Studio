@@ -67,7 +67,7 @@ export const themePresets: Record<ThemePresetId, ChatTheme> = {
 export const defaultProjectTheme: ProjectTheme = {
   presetId: 'neutral',
   chatTitle: 'Новый диалог',
-  chatSubtitle: 'Симулятор чата',
+  chatSubtitle: '',
 };
 
 export const resolveTheme = (settings?: ProjectTheme): ChatTheme => {

@@ -130,7 +130,9 @@ export const ChatVideo: React.FC<ChatVideoProps> = ({project = prototypeProject}
           <div style={{width: 54 * uiScale, height: 54 * uiScale, borderRadius: 18 * uiScale, display: 'grid', placeItems: 'center', background: theme.brandGradient, color: 'white', fontSize: 28 * uiScale, fontWeight: 800}}>AI</div>
           <div style={{marginLeft: 20 * uiScale}}>
             <div style={{fontWeight: 750, fontSize: 27 * uiScale}}>{themeSettings.chatTitle || defaultProjectTheme.chatTitle}</div>
-            <div style={{fontSize: 19 * uiScale, color: theme.muted, marginTop: 3 * uiScale}}>{themeSettings.chatSubtitle || defaultProjectTheme.chatSubtitle}</div>
+            {themeSettings.chatSubtitle ? (
+              <div style={{fontSize: 19 * uiScale, color: theme.muted, marginTop: 3 * uiScale}}>{themeSettings.chatSubtitle}</div>
+            ) : null}
           </div>
         </div>
         <div style={{height: chatHeight, overflow: 'hidden', position: 'relative', background: theme.chat}}>

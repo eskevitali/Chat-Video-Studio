@@ -908,7 +908,8 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
               <label>
                 Подпись
                 <input
-                  value={project.theme?.chatSubtitle ?? defaultProjectTheme.chatSubtitle}
+                  value={project.theme?.chatSubtitle ?? ''}
+                  placeholder="Пусто — на экране не показывается"
                   onChange={(event) => updateTheme({chatSubtitle: event.target.value})}
                 />
               </label>
