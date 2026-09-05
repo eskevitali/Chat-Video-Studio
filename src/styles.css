@@ -51,6 +51,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .app-shell { max-width: 1200px; margin: 0 auto; padding: 28px 16px 40px; }
 header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 22px; }
 .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.brand-link { display: inline-flex; flex-direction: column; align-items: center; line-height: 0; color: inherit; text-decoration: none; }
+.brand-link:hover { opacity: .85; }
 .brand img { display: block; height: 40px; width: auto; }
 h1 { margin: 4px 0 2px; font-size: clamp(1.6rem, 1.3rem + 1.2vw, 2.2rem); letter-spacing: 0; line-height: 1.2; color: var(--color-primary); }
 header p { margin: 0; color: var(--color-muted); font-size: 0.95rem; }
@@ -302,6 +304,7 @@ textarea {
   gap: 12px;
   text-align: center;
 }
+.login-card .brand-link { gap: 8px; margin-bottom: 4px; }
 .login-mark { margin: 0 auto 4px; display: block; }
 .login-wordmark { margin: 0 auto; height: 36px; width: auto; }
 .login-card h1 { margin: 4px 0 0; }

@@ -35,8 +35,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({onSuccess}) => {
   return (
     <section className="login-screen">
       <form className="login-card" onSubmit={(event) => void submit(event)}>
-        <img className="login-mark" src="/brand/s1-logo.png" alt="" width={72} height={65} />
-        <img className="login-wordmark" src="/brand/wordmark-64.png" alt="Lokvita" />
+        <a className="brand-link" href="https://lokvita.org" target="_blank" rel="noopener noreferrer">
+          <img className="login-mark" src="/brand/s1-logo.png" alt="" width={72} height={65} />
+          <img className="login-wordmark" src="/brand/wordmark-64.png" alt="Lokvita" />
+        </a>
         <h1>VChat</h1>
         <p>Студия видео из диалога. Вход для участников Lokvita.</p>
         {error ? <div className="notice error" role="alert">{error}</div> : null}

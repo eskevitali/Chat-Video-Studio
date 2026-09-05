@@ -424,7 +424,9 @@ const App: React.FC<{username: string; onLogout: () => void}> = ({username, onLo
     <main className={`app-shell panel-${mobilePanel}`}>
       <header>
         <div className="brand">
-          <img src="/brand/wordmark-40.png" alt="Lokvita" height={40} />
+          <a className="brand-link" href="https://lokvita.org" target="_blank" rel="noopener noreferrer">
+            <img src="/brand/wordmark-40.png" alt="Lokvita" height={40} />
+          </a>
           <div>
             <span className="eyebrow">VChat · {settingsReady ? 'ElevenLabs готов' : 'Нужны настройки голоса'}</span>
             <h1>{project.title}</h1>
