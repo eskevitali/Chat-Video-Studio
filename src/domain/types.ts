@@ -23,7 +23,7 @@ export type VideoSettings = {
 
 export type TtsProvider = 'elevenlabs' | 'xtts';
 
-export type ElevenLabsModelId = 'eleven_multilingual_v2' | 'eleven_flash_v2_5' | 'eleven_turbo_v2_5';
+export type ElevenLabsModelId = 'eleven_v3' | 'eleven_multilingual_v2' | 'eleven_flash_v2_5' | 'eleven_turbo_v2_5';
 
 export type ElevenLabsSettings = {
   modelId: ElevenLabsModelId;

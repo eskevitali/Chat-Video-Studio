@@ -11,7 +11,7 @@ import {sendFile} from './static.mjs';
 const MAX_BODY_BYTES = 100_000;
 const MAX_IMAGE_BYTES = 10_000_000;
 const MAX_TTS_QUEUE_SIZE = 100;
-const ELEVENLABS_MODELS = new Set(['eleven_multilingual_v2', 'eleven_flash_v2_5', 'eleven_turbo_v2_5']);
+const ELEVENLABS_MODELS = new Set(['eleven_v3', 'eleven_multilingual_v2', 'eleven_flash_v2_5', 'eleven_turbo_v2_5']);
 
 export const sanitizeVoiceId = (value) =>
   typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(value.trim()) ? value.trim() : '';

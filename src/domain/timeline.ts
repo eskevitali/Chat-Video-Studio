@@ -1,4 +1,5 @@
 import type {CompiledTimeline, PrototypeProject} from './types';
+import {displayWords} from './speech-tags';
 import {resolveVideoSettings} from './video';
 
 export const BUBBLE_AUDIO_LEAD_MS = 500;
@@ -26,7 +27,7 @@ export const compileTimeline = (project: PrototypeProject): CompiledTimeline => 
     const speechEndMs = speechStartMs + message.take.durationMs;
     const endMs = speechEndMs + message.postPauseMs;
 
-    const words = message.take.words.map((word) => ({
+    const words = displayWords(message.take.words).map((word) => ({
       ...word,
       visibleFromMs: speechStartMs + word.startMs,
     }));

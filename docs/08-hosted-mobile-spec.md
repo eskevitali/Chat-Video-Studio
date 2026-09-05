@@ -51,7 +51,7 @@
 ### 4.2. Озвучка
 
 - Провайдер новых дублей всегда `elevenlabs`.
-- Модели: Multilingual v2, Flash v2.5, Turbo v2.5 (как сейчас).
+- Модели: Eleven v3 (теги `[whispers]` и т.п., в пузыре скрыты), Multilingual v2, Flash v2.5, Turbo v2.5.
 - Перед запросом — подтверждение с оценкой кредитов (1 символ ≈ 1 кредит).
 - Тело `/api/tts` содержит `apiKey`, `userVoiceId` / `assistantVoiceId`, `modelId`, `text`, `role`, `messageId`.
 - Сервер проксирует ElevenLabs `with-timestamps`, пишет MP3 в `public/generated/<messageId>/`, возвращает take с `alignment: provider`.

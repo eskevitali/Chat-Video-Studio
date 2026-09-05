@@ -10,6 +10,7 @@ import {
   useVideoConfig,
 } from 'remotion';
 import {compileTimeline, frameToMilliseconds, visibleTextAt} from '../domain/timeline';
+import {stripSpeechMarkup} from '../domain/speech-tags';
 import type {CompiledMessage, PrototypeProject} from '../domain/types';
 import {prototypeProject} from '../data/prototype-project';
 import {defaultProjectTheme, resolveTheme} from './theme';
@@ -19,11 +20,12 @@ const estimatedBubbleHeight = (textLength: number, isUser: boolean, scale: numbe
   Math.max(145 * scale, (76 + Math.max(1, textLength / ((isUser ? 34 : 42) * widthFactor)) * 48 + imageCount * 350) * scale);
 
 const progressiveTextLength = (message: CompiledMessage, timeMs: number) => {
+  const spokenLength = stripSpeechMarkup(message.text).length || message.text.length;
   if (timeMs <= message.speechStartMs) return 0;
   if (timeMs >= message.speechEndMs || message.take.words.length === 0) {
     return message.take.words.length === 0
-      ? message.text.length * interpolate(timeMs, [message.speechStartMs, message.speechEndMs], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'})
-      : message.text.length;
+      ? spokenLength * interpolate(timeMs, [message.speechStartMs, message.speechEndMs], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'})
+      : spokenLength;
   }
   const localTime = timeMs - message.speechStartMs;
   let length = 0;
@@ -40,7 +42,7 @@ const progressiveTextLength = (message: CompiledMessage, timeMs: number) => {
     }
     break;
   }
-  return Math.min(message.text.length, length);
+  return Math.min(spokenLength, length);
 };
 
 const TypingDots: React.FC<{color: string; scale: number}> = ({color, scale}) => {

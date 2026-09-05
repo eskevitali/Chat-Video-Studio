@@ -87,7 +87,7 @@ const isVideoSettings = (value: unknown): value is VideoSettings =>
 
 const isElevenLabsSettings = (value: unknown): value is ElevenLabsSettings =>
   isRecord(value)
-  && (value.modelId === 'eleven_multilingual_v2' || value.modelId === 'eleven_flash_v2_5' || value.modelId === 'eleven_turbo_v2_5')
+  && (value.modelId === 'eleven_v3' || value.modelId === 'eleven_multilingual_v2' || value.modelId === 'eleven_flash_v2_5' || value.modelId === 'eleven_turbo_v2_5')
   && (value.userVoiceId === undefined || (typeof value.userVoiceId === 'string' && value.userVoiceId.length <= 100))
   && (value.assistantVoiceId === undefined || (typeof value.assistantVoiceId === 'string' && value.assistantVoiceId.length <= 100));
 

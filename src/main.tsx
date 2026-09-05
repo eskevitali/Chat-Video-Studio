@@ -883,6 +883,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
                     value={elevenLabs.modelId}
                     onChange={(event) => updateElevenLabs({modelId: event.target.value as ElevenLabsModelId})}
                   >
+                    <option value="eleven_v3">Eleven v3 · интонационные теги</option>
                     <option value="eleven_multilingual_v2">Multilingual v2 · качество</option>
                     <option value="eleven_flash_v2_5">Flash v2.5 · быстро и дешевле</option>
                     <option value="eleven_turbo_v2_5">Turbo v2.5 · устаревающая</option>
@@ -890,7 +891,9 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
                 </label>
               </div>
               <p className="provider-note">
-                Голоса и API-ключ задаются в блоке «Настройки». Новые дубли всегда идут через ElevenLabs.
+                {elevenLabs.modelId === 'eleven_v3'
+                  ? 'Теги в квадратных скобках уходят в ElevenLabs и не показываются в пузыре: [whispers] [sighs] [excited] [laughs]. На v3 не используйте SSML <break>.'
+                  : 'Интонационные теги [whispers] на этой модели читаются вслух. Для тегов выберите Eleven v3. Пауза на v2: <break time="1s" />.'}
               </p>
             </div>
           </details>

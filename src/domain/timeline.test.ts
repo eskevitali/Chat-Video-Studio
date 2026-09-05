@@ -52,6 +52,20 @@ describe('compileTimeline', () => {
     expect(timeline.messages[1].startMs).toBe(2600);
   });
 
+  it('не показывает audio tags в тексте пузыря', () => {
+    const tagged = structuredClone(project);
+    tagged.messages[0].text = '[whispers] Hello world';
+    tagged.messages[0].take.words = [
+      {text: '[whispers]', startMs: 0, endMs: 180},
+      {text: 'Hello', startMs: 200, endMs: 400},
+      {text: 'world', startMs: 500, endMs: 900},
+    ];
+    const [message] = compileTimeline(tagged).messages;
+    expect(visibleTextAt(message, message.speechStartMs + 199)).toBe('');
+    expect(visibleTextAt(message, message.speechStartMs + 200)).toBe('Hello');
+    expect(visibleTextAt(message, message.speechStartMs + 500)).toBe('Hello world');
+  });
+
   it('ускоряет индикатор набора, не меняя длительность аудио', () => {
     const faster = structuredClone(project);
     faster.video = {format: 'portrait', uiScale: 1, typingSpeed: 2};
