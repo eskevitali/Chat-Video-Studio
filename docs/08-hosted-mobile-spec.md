@@ -143,7 +143,7 @@
 
 ### 5.3. Контейнер
 
-- Образ: Node 20 + Chromium + шрифты Noto/Liberation.
+- Образ: Node 22 + Chromium + шрифты Noto/Liberation (pnpm 11 нужен `node:sqlite`).
 - `CHROME_NO_SANDBOX=1`, `shm_size: 2g`, `concurrency=1`.
 - Сеть: `nginx_default` (DNS-имя контейнера `vchat`, порт 4173).
 - Ресурсы: лимит памяти 6g, чтобы не вытеснить lokvita / kiderstudio.

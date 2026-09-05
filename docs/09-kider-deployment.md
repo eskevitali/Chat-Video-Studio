@@ -15,7 +15,7 @@
 
 | Файл в репе | Назначение |
 |---|---|
-| `Dockerfile` | Node 20, Chromium, сборка SPA, `node server/index.mjs` |
+| `Dockerfile` | Node 22, Chromium, сборка SPA, `node server/index.mjs` |
 | `docker-compose.yml` | сервис `vchat`, тома медиа, `shm_size`, лимит RAM |
 | `.dockerignore` | без `node_modules`, `.venv-xtts`, локальных дублей |
 
