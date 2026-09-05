@@ -1,6 +1,11 @@
 import React, {useState} from 'react';
 
-export type Session = {username: string; membershipStatus?: string};
+export type Session = {
+  username: string;
+  membershipStatus?: string;
+  userId?: string;
+  auth?: boolean;
+};
 
 type LoginScreenProps = {
   onSuccess: (session: Session) => void;

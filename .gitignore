@@ -17,3 +17,4 @@ voice-samples/*.flac
 .env
 .env.local
 .env.*.local
+data/settings/

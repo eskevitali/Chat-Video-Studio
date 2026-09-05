@@ -10,6 +10,7 @@ output
 .env
 .env.local
 .env.*.local
+data/settings
 public/generated
 public/uploads
 public/renders

@@ -12,10 +12,12 @@ services:
       CHROME_PATH: /usr/bin/chromium
       CHROME_NO_SANDBOX: "1"
       RENDER_CONCURRENCY: "1"
+      SETTINGS_DIR: /app/data/settings
     volumes:
       - vchat-generated:/app/public/generated
       - vchat-uploads:/app/public/uploads
       - vchat-renders:/app/public/renders
+      - vchat-settings:/app/data/settings
     networks:
       - nginx_default
     shm_size: "2gb"
@@ -35,3 +37,4 @@ volumes:
   vchat-generated:
   vchat-uploads:
   vchat-renders:
+  vchat-settings:

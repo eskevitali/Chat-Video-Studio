@@ -8,7 +8,7 @@ import type {AudioTake, ElevenLabsModelId, ElevenLabsSettings, MessageImage, Pro
 import {createApproximateWordTimings, estimateSpeechDuration} from './domain/words';
 import {importedChatToProject, parseMarkdownChat} from './import/markdown';
 import {parseEditorSnapshot, serializeEditorSnapshot} from './persistence/editor-snapshot';
-import {loadAppSettings, saveAppSettings, type AppSettings} from './persistence/app-settings';
+import {defaultAppSettings, loadAppSettings, parseAppSettings, saveAppSettings, serializeAppSettings, type AppSettings} from './persistence/app-settings';
 import {LoginScreen, type Session} from './login';
 import {defaultProjectTheme, themePresets} from './remotion/theme';
 import {defaultVideoSettings, getVideoDimensions, resolveVideoSettings, videoDimensions} from './domain/video';
@@ -60,7 +60,7 @@ const getImageDimensions = (file: File) => new Promise<{width: number; height: n
   image.src = url;
 });
 
-const App: React.FC<{username: string; onLogout: () => void}> = ({username, onLogout}) => {
+const App: React.FC<{username: string; onLogout: () => void; cloudSettings: boolean}> = ({username, onLogout, cloudSettings}) => {
   const [initial] = useState(loadInitialProject);
   const [project, setProject] = useState<PrototypeProject>(initial.project);
   const [notice, setNotice] = useState(initial.notice);
@@ -74,7 +74,8 @@ const App: React.FC<{username: string; onLogout: () => void}> = ({username, onLo
   const [draggedMessageId, setDraggedMessageId] = useState('');
   const [dropTargetId, setDropTargetId] = useState('');
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('script');
-  const [settings, setSettings] = useState<AppSettings>(loadAppSettings);
+  const [settings, setSettings] = useState<AppSettings>(cloudSettings ? defaultAppSettings : loadAppSettings);
+  const [settingsHydrated, setSettingsHydrated] = useState(!cloudSettings);
   const [showApiKey, setShowApiKey] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -97,12 +98,53 @@ const App: React.FC<{username: string; onLogout: () => void}> = ({username, onLo
   }, [project]);
 
   useEffect(() => {
+    if (!cloudSettings) {
+      setSettingsHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/settings')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('settings');
+        return response.json();
+      })
+      .then((remote) => {
+        if (cancelled) return;
+        const fromAccount = parseAppSettings(JSON.stringify(remote));
+        const local = loadAppSettings();
+        setSettings(fromAccount.apiKey || fromAccount.userVoiceId ? fromAccount : local);
+        setSettingsHydrated(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSettings(loadAppSettings());
+          setSettingsHydrated(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cloudSettings]);
+
+  useEffect(() => {
+    if (!settingsHydrated) return;
     try {
       saveAppSettings(settings);
     } catch {
       setError('Не удалось сохранить настройки ElevenLabs в браузере.');
     }
-  }, [settings]);
+    if (!cloudSettings) return;
+    const timer = window.setTimeout(() => {
+      void fetch('/api/settings', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: serializeAppSettings(settings),
+      }).catch(() => {
+        setError('Не удалось сохранить настройки ElevenLabs для учётки Lokvita.');
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [settings, settingsHydrated, cloudSettings]);
 
   const settingsReady = Boolean(settings.apiKey && settings.userVoiceId && settings.assistantVoiceId);
 
@@ -122,7 +164,9 @@ const App: React.FC<{username: string; onLogout: () => void}> = ({username, onLo
   const updateSettings = (patch: Partial<AppSettings>) => {
     setSettings((current) => ({...current, ...patch}));
     setError('');
-    setNotice('Настройки ElevenLabs сохранены в этом браузере. Ключ не попадает в JSON-снимок.');
+    setNotice(cloudSettings
+      ? 'Настройки ElevenLabs сохранены для вашей учётки Lokvita. Ключ не попадает в JSON-снимок.'
+      : 'Настройки ElevenLabs сохранены в этом браузере. Ключ не попадает в JSON-снимок.');
   };
 
   const changeTimelineZoom = (direction: -1 | 1) => {
@@ -502,7 +546,9 @@ const App: React.FC<{username: string; onLogout: () => void}> = ({username, onLo
                 />
               </label>
               <p className="provider-note">
-                Ключ хранится только в этом браузере и уходит на сервер в момент озвучки. В JSON-снимок проекта он не записывается.
+                {cloudSettings
+                  ? 'Ключ привязан к вашей учётке Lokvita и доступен с любого устройства. В JSON-снимок проекта он не записывается.'
+                  : 'Ключ хранится только в этом браузере и уходит на сервер в момент озвучки. В JSON-снимок проекта он не записывается.'}
               </p>
             </div>
           </details>
@@ -949,7 +995,12 @@ const Root: React.FC = () => {
           return;
         }
         const payload = await response.json() as Session;
-        setSession({username: payload.username, membershipStatus: payload.membershipStatus});
+        setSession({
+          username: payload.username,
+          membershipStatus: payload.membershipStatus,
+          userId: payload.userId,
+          auth: payload.auth,
+        });
       })
       .catch(() => setSession(null));
   }, []);
@@ -966,6 +1017,7 @@ const Root: React.FC = () => {
   return (
     <App
       username={session.username}
+      cloudSettings={session.auth !== false}
       onLogout={() => {
         void fetch('/api/logout', {method: 'POST'}).finally(() => setSession(null));
       }}

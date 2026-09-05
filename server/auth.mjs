@@ -158,12 +158,19 @@ export const createAuth = (environment = {}, fetchImplementation = fetch) => {
     const session = {
       username: displayNameFor(user),
       email: String(user.email || trimmedEmail),
+      userId: String(user.id || user.publicId || trimmedEmail),
       membershipStatus: String(user.membershipStatus || ''),
       token,
       expiresAt: Date.now() + SESSION_TTL_MS,
     };
     sessions.set(token, session);
-    return {ok: true, username: session.username, token, membershipStatus: session.membershipStatus};
+    return {
+      ok: true,
+      username: session.username,
+      userId: session.userId,
+      token,
+      membershipStatus: session.membershipStatus,
+    };
   };
 
   return {

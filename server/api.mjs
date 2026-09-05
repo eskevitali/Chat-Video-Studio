@@ -4,6 +4,7 @@ import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {createAuth} from './auth.mjs';
+import {createUserSettingsStore} from './user-settings.mjs';
 
 const MAX_BODY_BYTES = 100_000;
 const MAX_IMAGE_BYTES = 10_000_000;
@@ -84,7 +85,7 @@ const applyCors = (request, response, environment) => {
     response.setHeader('Access-Control-Allow-Origin', origin);
     response.setHeader('Vary', 'Origin');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Message-Id, X-File-Name, X-Image-Width, X-Image-Height');
-    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
     response.setHeader('Access-Control-Allow-Credentials', 'true');
   }
 };
@@ -157,6 +158,9 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
   const ttsQueue = createSerialQueue();
   const root = resolve(projectRoot);
   const auth = createAuth(environment);
+  const userSettings = createUserSettingsStore({
+    directory: environment.SETTINGS_DIR || resolve(root, 'data/settings'),
+  });
 
   return async (request, response) => {
     applyCors(request, response, environment);
@@ -191,7 +195,12 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
         );
         if (!result.ok) return json(response, 401, {error: result.error});
         auth.attachSessionCookie(response, result.token);
-        json(response, 200, {username: result.username, membershipStatus: result.membershipStatus});
+        json(response, 200, {
+          username: result.username,
+          userId: result.userId,
+          membershipStatus: result.membershipStatus,
+          auth: true,
+        });
       } catch (error) {
         json(response, 400, {error: error instanceof Error ? error.message : 'Ошибка входа.'});
       }
@@ -217,6 +226,7 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
       }
       json(response, 200, {
         username: session.username,
+        userId: session.userId,
         membershipStatus: session.membershipStatus,
         auth: true,
       });
@@ -225,6 +235,33 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
 
     if (auth.enabled && !auth.sessionOf(request)) {
       json(response, 401, {error: 'Нужна авторизация.'});
+      return true;
+    }
+
+    if (path === '/api/settings' && request.method === 'GET') {
+      const session = auth.sessionOf(request);
+      if (!session?.userId) {
+        json(response, 200, {apiKey: '', userVoiceId: '', assistantVoiceId: '', source: 'local'});
+        return true;
+      }
+      const stored = await userSettings.read(session.userId);
+      json(response, 200, {...stored, source: 'account'});
+      return true;
+    }
+
+    if (path === '/api/settings' && (request.method === 'PUT' || request.method === 'POST')) {
+      const session = auth.sessionOf(request);
+      if (!session?.userId) {
+        json(response, 400, {error: 'Нет учётки для сохранения настроек.'});
+        return true;
+      }
+      try {
+        const body = await readJson(request);
+        const saved = await userSettings.write(session.userId, body);
+        json(response, 200, {...saved, source: 'account'});
+      } catch (error) {
+        json(response, 400, {error: error instanceof Error ? error.message : 'Не удалось сохранить настройки.'});
+      }
       return true;
     }
 

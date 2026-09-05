@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {createAuth, displayNameFor, isLokvitaMember, parseCookies, safeEqual} from './auth.mjs';
 
 const member = {
+  id: '11111111-2222-3333-4444-555555555555',
   email: 'a@lokvita.org',
   membershipStatus: 'PARTICIPANT',
   isAdmin: false,
