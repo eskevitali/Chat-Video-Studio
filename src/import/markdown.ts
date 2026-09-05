@@ -10,7 +10,7 @@ const normalizeAuthor = (author: string) => author.trim().replace(/:$/, '');
 
 const roleForAuthor = (author: string): Role => {
   const value = author.toLocaleLowerCase('ru-RU');
-  if (/^(пользователь|user|human|вы|you)$/.test(value)) return 'user';
+  if (/^(пользователь|user|human|вы|you)(\s*\d+)?$/.test(value)) return 'user';
   return 'assistant';
 };
 

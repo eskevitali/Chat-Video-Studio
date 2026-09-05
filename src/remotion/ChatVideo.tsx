@@ -15,6 +15,14 @@ import type {CompiledMessage, PrototypeProject} from '../domain/types';
 import {prototypeProject} from '../data/prototype-project';
 import {defaultProjectTheme, resolveTheme} from './theme';
 import {getVideoDimensions, resolveVideoSettings} from '../domain/video';
+import {isUserSide, resolveSpeakers, speakerOf, userSpeakerIndex} from '../domain/speakers';
+
+const extraUserBubbles = ['#d7e7d4', '#f7e6c8', '#e4d4ea', '#d4eaf0', '#f8dcd8'];
+const bubbleForSpeaker = (userBubble: string, assistantBubble: string, isUser: boolean, userIndex: number) => {
+  if (!isUser) return assistantBubble;
+  if (userIndex <= 0) return userBubble;
+  return extraUserBubbles[(userIndex - 1) % extraUserBubbles.length];
+};
 
 const estimatedBubbleHeight = (textLength: number, isUser: boolean, scale: number, widthFactor: number, imageCount = 0) =>
   Math.max(145 * scale, (76 + Math.max(1, textLength / ((isUser ? 34 : 42) * widthFactor)) * 48 + imageCount * 350) * scale);
@@ -69,6 +77,7 @@ export const ChatVideo: React.FC<ChatVideoProps> = ({project = prototypeProject}
   const {fps, width, height} = useVideoConfig();
   const timeMs = frameToMilliseconds(frame, fps);
   const timeline = compileTimeline(project);
+  const speakers = resolveSpeakers(project);
   const theme = resolveTheme(project.theme);
   const themeSettings = project.theme ?? defaultProjectTheme;
   const video = resolveVideoSettings(project.video);
@@ -97,7 +106,7 @@ export const ChatVideo: React.FC<ChatVideoProps> = ({project = prototypeProject}
         extrapolateRight: 'clamp',
       });
     }, 0);
-    return sum + estimatedBubbleHeight(visibleTextLength, message.role === 'user', uiScale, widthFactor, visibleImages) + 38 * uiScale;
+    return sum + estimatedBubbleHeight(visibleTextLength, isUserSide(message, speakers), uiScale, widthFactor, visibleImages) + 38 * uiScale;
   }, 90 * uiScale);
   const targetScroll = Math.max(0, contentBottom - chatHeight * 0.78);
   const translateY = -targetScroll;
@@ -132,7 +141,9 @@ export const ChatVideo: React.FC<ChatVideoProps> = ({project = prototypeProject}
               const localFrame = Math.max(0, Math.round(((timeMs - message.bubbleStartMs) / 1000) * fps));
               const enter = spring({frame: localFrame, fps, config: {damping: 18, stiffness: 150}});
               const text = visibleTextAt(message, timeMs);
-              const isUser = message.role === 'user';
+              const isUser = isUserSide(message, speakers);
+              const speaker = speakerOf(message, speakers);
+              const bubble = bubbleForSpeaker(theme.userBubble, theme.assistantBubble, isUser, userSpeakerIndex(speaker.id, speakers));
               const visibleImageCount = (message.attachments ?? []).reduce((sum, image) => {
                 const revealAt = image.reveal === 'speech'
                   ? message.speechStartMs
@@ -170,13 +181,13 @@ export const ChatVideo: React.FC<ChatVideoProps> = ({project = prototypeProject}
                 <div key={message.id} style={{display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', marginBottom: 38 * uiScale}}>
                   <div style={{fontSize: 20 * uiScale, fontWeight: 700, color: theme.muted, margin: `0 ${16 * uiScale}px ${10 * uiScale}px`}}>{message.author}</div>
                   {!showBubble ? (
-                    <div style={{background: isUser ? theme.userBubble : theme.assistantBubble, borderRadius: 25 * uiScale, padding: `${15 * uiScale}px ${24 * uiScale}px`}}><TypingDots color={theme.muted} scale={uiScale} /></div>
+                    <div style={{background: bubble, borderRadius: 25 * uiScale, padding: `${15 * uiScale}px ${24 * uiScale}px`}}><TypingDots color={theme.muted} scale={uiScale} /></div>
                   ) : (
                     <div style={{
                       maxWidth: isUser ? '76%' : '88%',
                       minHeight: estimatedBubbleHeight(progressiveTextLength(message, timeMs), isUser, uiScale, widthFactor, visibleImageCount),
                       boxSizing: 'border-box',
-                      background: isUser ? theme.userBubble : theme.assistantBubble,
+                      background: bubble,
                       borderRadius: isUser ? '28px 28px 8px 28px' : '28px 28px 28px 8px',
                       padding: `${30 * uiScale}px ${34 * uiScale}px`,
                       fontSize: 32 * uiScale,

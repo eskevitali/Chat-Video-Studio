@@ -14,6 +14,7 @@ describe('user settings store', () => {
       apiKey: 'sk_live',
       userVoiceId: 'Voice_1',
       assistantVoiceId: '',
+      speakerVoiceIds: {},
     });
     expect(settingsFileId('../etc/passwd')).toBe('etcpasswd');
   });
@@ -25,6 +26,7 @@ describe('user settings store', () => {
       apiKey: '',
       userVoiceId: '',
       assistantVoiceId: '',
+      speakerVoiceIds: {},
     });
     await store.write('user-1', {
       apiKey: 'sk_a',
@@ -35,6 +37,7 @@ describe('user settings store', () => {
       apiKey: 'sk_a',
       userVoiceId: 'aaa',
       assistantVoiceId: 'bbb',
+      speakerVoiceIds: {},
     });
     await expect(store.read('user-2')).resolves.toMatchObject({apiKey: ''});
     await rm(root, {recursive: true, force: true});

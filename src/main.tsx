@@ -4,7 +4,7 @@ import {Player, type PlayerRef} from '@remotion/player';
 import {ChatVideo} from './remotion/ChatVideo';
 import {compileTimeline} from './domain/timeline';
 import {prototypeProject} from './data/prototype-project';
-import type {AudioTake, ElevenLabsModelId, ElevenLabsSettings, MessageImage, ProjectTheme, PrototypeMessage, PrototypeProject, ThemePresetId, VideoSettings} from './domain/types';
+import type {AudioTake, ElevenLabsModelId, ElevenLabsSettings, MessageImage, ProjectTheme, PrototypeMessage, PrototypeProject, Speaker, ThemePresetId, VideoSettings} from './domain/types';
 import {createApproximateWordTimings, estimateSpeechDuration} from './domain/words';
 import {importedChatToProject, parseMarkdownChat} from './import/markdown';
 import {createEditorSnapshot, parseEditorSnapshot, serializeEditorSnapshot} from './persistence/editor-snapshot';
@@ -14,6 +14,7 @@ import {SpeechTagEditor} from './speech-tag-editor';
 import {defaultProjectTheme, themePresets} from './remotion/theme';
 import {defaultVideoSettings, getVideoDimensions, resolveVideoSettings, videoDimensions} from './domain/video';
 import {blankMessage, cloneMessage, cloneTakeInMessage, insertMessageAfter, moveMessageBy, reorderMessages} from './domain/messages';
+import {MAX_USER_SPEAKERS, nextUserSpeaker, resolveSpeakers, speakerIdOf, speakerOf, userSpeakers} from './domain/speakers';
 import './styles.css';
 
 const STORAGE_KEY = 'chat-video-studio.editor-snapshot.v1';
@@ -95,6 +96,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     : -1;
   const video = resolveVideoSettings(project.video);
   const elevenLabs = project.elevenLabs ?? {modelId: 'eleven_multilingual_v2'};
+  const speakers = useMemo(() => resolveSpeakers(project), [project]);
   const dimensions = getVideoDimensions(project.video);
 
   useEffect(() => {
@@ -235,9 +237,10 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
         ...current.elevenLabs,
         userVoiceId: settings.userVoiceId || current.elevenLabs?.userVoiceId,
         assistantVoiceId: settings.assistantVoiceId || current.elevenLabs?.assistantVoiceId,
+        speakerVoiceIds: {...current.elevenLabs?.speakerVoiceIds, ...settings.speakerVoiceIds},
       },
     }));
-  }, [settings.userVoiceId, settings.assistantVoiceId]);
+  }, [settings.userVoiceId, settings.assistantVoiceId, settings.speakerVoiceIds]);
 
   const updateSettings = (patch: Partial<AppSettings>) => {
     setSettings((current) => ({...current, ...patch}));
@@ -340,13 +343,26 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     setNotice('Текст изменён. Существующая озвучка снята с реплики как устаревшая.');
   };
 
-  const updateAuthor = (role: PrototypeMessage['role'], author: string) => {
+  const updateSpeakerName = (speakerId: string, author: string) => {
     setProject((current) => ({
       ...current,
-      messages: current.messages.map((message) => message.role === role ? {...message, author} : message),
+      speakers: resolveSpeakers(current).map((speaker) => speaker.id === speakerId ? {...speaker, name: author} : speaker),
+      messages: current.messages.map((message) => speakerIdOf(message) === speakerId ? {...message, author} : message),
     }));
     setError('');
-    setNotice(`Подпись роли «${role === 'user' ? 'Пользователь' : 'Ассистент'}» обновлена во всех репликах.`);
+    setNotice('Имя говорящего обновлено во всех его репликах.');
+  };
+
+  const assignSpeaker = (messageId: string, speakerId: string) => {
+    const speaker = speakers.find((item) => item.id === speakerId);
+    if (!speaker) return;
+    setProject((current) => ({
+      ...current,
+      speakers: resolveSpeakers(current),
+      messages: current.messages.map((message) => message.id === messageId
+        ? {...message, speakerId: speaker.id, role: speaker.role, author: speaker.name}
+        : message),
+    }));
   };
 
   const updateTheme = (patch: Partial<ProjectTheme>) => {
@@ -398,11 +414,20 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     setNotice('Настройки ElevenLabs обновлены и добавлены в автосохранение.');
   };
 
+  const voiceForSpeaker = (speaker: Speaker) => {
+    if (speaker.role === 'assistant') {
+      return settings.assistantVoiceId || project.elevenLabs?.assistantVoiceId || '';
+    }
+    if (speaker.id === 'user') {
+      return settings.speakerVoiceIds.user || settings.userVoiceId || project.elevenLabs?.userVoiceId || '';
+    }
+    return settings.speakerVoiceIds[speaker.id] || project.elevenLabs?.speakerVoiceIds?.[speaker.id] || '';
+  };
+
   const generateTake = async (message: PrototypeMessage) => {
     const estimatedCredits = message.text.length;
-    const userVoiceId = project.elevenLabs?.userVoiceId?.trim() || settings.userVoiceId;
-    const assistantVoiceId = project.elevenLabs?.assistantVoiceId?.trim() || settings.assistantVoiceId;
-    const voiceId = message.role === 'assistant' ? assistantVoiceId : userVoiceId;
+    const speaker = speakerOf(message, speakers);
+    const voiceId = voiceForSpeaker(speaker);
     if (cloudSettings && !projectId) {
       setError('Сначала сохраните проект (доступно 2 слота, каждый до 60 минут).');
       return;
@@ -414,7 +439,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     }
     if (!voiceId) {
       setMobilePanel('settings');
-      setError(`Укажите Voice ID для роли «${message.role === 'assistant' ? 'ассистент' : 'пользователь'}» в настройках.`);
+      setError(`Укажите Voice ID для «${speaker.name}» в настройках.`);
       return;
     }
     if (!window.confirm(`Отправить реплику в ElevenLabs?\n\n${estimatedCredits} символов ≈ ${estimatedCredits} кредитов.`)) return;
@@ -433,8 +458,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
           apiKey: settings.apiKey,
           projectId,
           modelId: project.elevenLabs?.modelId,
-          userVoiceId,
-          assistantVoiceId,
+          voiceId,
         }),
       });
       const payload = await response.json() as {take?: AudioTake; error?: string};
@@ -537,22 +561,41 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     setNotice('Порядок реплик изменён, таймлайн пересчитан.');
   };
 
-  const authorForRole = (role: 'user' | 'assistant') =>
-    project.messages.find((message) => message.role === role)?.author
-    ?? (role === 'user' ? 'Пользователь' : 'Ассистент');
-
-  const addMessage = (role: 'user' | 'assistant') => {
+  const addMessageFor = (speaker: Speaker) => {
     if (project.messages.length >= 500) {
       setError('В одном проекте допускается не больше 500 реплик.');
       return;
     }
-    const created = blankMessage({role, author: authorForRole(role), text: ''});
+    const created = blankMessage({role: speaker.role, author: speaker.name, speakerId: speaker.id, text: ''});
     setProject((current) => ({
       ...current,
+      speakers: resolveSpeakers(current),
       messages: insertMessageAfter(current.messages, selectedMessage?.id, created),
     }));
     setSelectedMessageId(created.id);
-    setNotice(role === 'user' ? 'Добавлена реплика пользователя.' : 'Добавлена реплика ассистента.');
+    setNotice(`Добавлена реплика «${speaker.name}».`);
+    setError('');
+  };
+
+  const addUserSpeaker = () => {
+    const currentSpeakers = resolveSpeakers(project);
+    if (userSpeakers(currentSpeakers).length >= MAX_USER_SPEAKERS) {
+      setError(`Справа не больше ${MAX_USER_SPEAKERS} пользователей.`);
+      return;
+    }
+    if (project.messages.length >= 500) {
+      setError('В одном проекте допускается не больше 500 реплик.');
+      return;
+    }
+    const speaker = nextUserSpeaker(currentSpeakers);
+    const created = blankMessage({role: 'user', author: speaker.name, speakerId: speaker.id, text: ''});
+    setProject((current) => ({
+      ...current,
+      speakers: [...currentSpeakers, speaker],
+      messages: insertMessageAfter(current.messages, selectedMessage?.id, created),
+    }));
+    setSelectedMessageId(created.id);
+    setNotice(`${speaker.name} добавлен справа. Укажите ему Voice ID в настройках.`);
     setError('');
   };
 
@@ -798,24 +841,37 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
                   </button>
                 </span>
               </label>
-              <label>
-                Voice ID пользователя
-                <input
-                  value={settings.userVoiceId}
-                  spellCheck={false}
-                  placeholder="21m00Tcm4TlvDq8ikWAM"
-                  onChange={(event) => updateSettings({userVoiceId: event.target.value.trim()})}
-                />
-              </label>
+              {userSpeakers(speakers).map((speaker) => (
+                <label key={speaker.id}>
+                  Voice ID · {speaker.name}
+                  <input
+                    value={speaker.id === 'user' ? (settings.speakerVoiceIds.user || settings.userVoiceId) : (settings.speakerVoiceIds[speaker.id] || '')}
+                    spellCheck={false}
+                    placeholder="Voice ID ElevenLabs"
+                    onChange={(event) => {
+                      const voiceId = event.target.value.trim();
+                      if (speaker.id === 'user') {
+                        updateSettings({
+                          userVoiceId: voiceId,
+                          speakerVoiceIds: {...settings.speakerVoiceIds, user: voiceId},
+                        });
+                      } else {
+                        updateSettings({speakerVoiceIds: {...settings.speakerVoiceIds, [speaker.id]: voiceId}});
+                      }
+                    }}
+                  />
+                </label>
+              ))}
               <label>
                 Voice ID ассистента
                 <input
                   value={settings.assistantVoiceId}
                   spellCheck={false}
-                  placeholder="второй голос ElevenLabs"
+                  placeholder="голос слева"
                   onChange={(event) => updateSettings({assistantVoiceId: event.target.value.trim()})}
                 />
               </label>
+              <button className="secondary" type="button" onClick={addUserSpeaker}>Добавить пользователя справа</button>
               <p className="provider-note">
                 {cloudSettings
                   ? 'Ключ привязан к вашей учётке Lokvita и доступен с любого устройства. В JSON-снимок проекта он не записывается.'
@@ -965,9 +1021,13 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
             </div>
             {selectedMessage ? (
               <div className="scenario-actions">
-                <button type="button" className="secondary" onClick={() => addMessage('user')}>+ Пользователь</button>
-                <button type="button" className="secondary" onClick={() => addMessage('assistant')}>+ Ассистент</button>
-                <button type="button" className="secondary" onClick={cloneSelectedMessage}>Клонировать реплику</button>
+                {speakers.map((speaker) => (
+                  <button key={speaker.id} type="button" className="secondary" onClick={() => addMessageFor(speaker)}>
+                    + {speaker.name}
+                  </button>
+                ))}
+                <button type="button" className="secondary span-2" onClick={addUserSpeaker}>+ Новый пользователь</button>
+                <button type="button" className="secondary span-2" onClick={cloneSelectedMessage}>Клонировать реплику</button>
                 <button
                   type="button"
                   className="secondary"
@@ -1001,14 +1061,27 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
                 </b>
               </div>
               <label className="author-field">
+                Говорящий
+                <select
+                  value={speakerIdOf(selectedMessage)}
+                  onChange={(event) => assignSpeaker(selectedMessage.id, event.target.value)}
+                >
+                  {speakers.map((speaker) => (
+                    <option key={speaker.id} value={speaker.id}>
+                      {speaker.name} · {speaker.role === 'user' ? 'справа' : 'слева'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="author-field">
                 Подпись автора
                 <input
                   value={selectedMessage.author}
                   maxLength={100}
-                  placeholder={selectedMessage.role === 'user' ? 'Пользователь' : 'ChatGPT'}
-                  onChange={(event) => updateAuthor(selectedMessage.role, event.target.value)}
+                  placeholder={speakerOf(selectedMessage, speakers).name}
+                  onChange={(event) => updateSpeakerName(speakerIdOf(selectedMessage), event.target.value)}
                 />
-                <small>Применяется ко всем репликам этой роли</small>
+                <small>Имя на всех репликах этого говорящего</small>
               </label>
               <SpeechTagEditor
                 aria-label={`Текст реплики ${selectedMessageIndex + 1}`}

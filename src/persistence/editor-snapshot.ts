@@ -1,4 +1,4 @@
-import type {AudioTake, ElevenLabsSettings, MessageImage, ProjectTheme, PrototypeMessage, PrototypeProject, VideoSettings, WordTiming} from '../domain/types';
+import type {AudioTake, ElevenLabsSettings, MessageImage, ProjectTheme, PrototypeMessage, PrototypeProject, Speaker, VideoSettings, WordTiming} from '../domain/types';
 
 export const EDITOR_SNAPSHOT_FORMAT = 'chat-video-editor-snapshot';
 export const EDITOR_SNAPSHOT_VERSION = 1;
@@ -59,6 +59,7 @@ const isMessage = (value: unknown): value is PrototypeMessage =>
   && isFiniteNonNegative(value.typingDurationMs)
   && isFiniteNonNegative(value.postPauseMs)
   && isAudioTake(value.take)
+  && (value.speakerId === undefined || (typeof value.speakerId === 'string' && value.speakerId.length <= 80))
   && (value.takes === undefined || (Array.isArray(value.takes) && value.takes.every(isAudioTake)))
   && (value.attachments === undefined || (Array.isArray(value.attachments) && value.attachments.every(isMessageImage)));
 
@@ -89,7 +90,17 @@ const isElevenLabsSettings = (value: unknown): value is ElevenLabsSettings =>
   isRecord(value)
   && (value.modelId === 'eleven_v3' || value.modelId === 'eleven_multilingual_v2' || value.modelId === 'eleven_flash_v2_5' || value.modelId === 'eleven_turbo_v2_5')
   && (value.userVoiceId === undefined || (typeof value.userVoiceId === 'string' && value.userVoiceId.length <= 100))
-  && (value.assistantVoiceId === undefined || (typeof value.assistantVoiceId === 'string' && value.assistantVoiceId.length <= 100));
+  && (value.assistantVoiceId === undefined || (typeof value.assistantVoiceId === 'string' && value.assistantVoiceId.length <= 100))
+  && (value.speakerVoiceIds === undefined || (isRecord(value.speakerVoiceIds) && Object.values(value.speakerVoiceIds).every((item) => typeof item === 'string' && item.length <= 100)));
+
+const isSpeaker = (value: unknown): value is Speaker =>
+  isRecord(value)
+  && typeof value.id === 'string'
+  && value.id.length > 0
+  && value.id.length <= 80
+  && (value.role === 'user' || value.role === 'assistant')
+  && typeof value.name === 'string'
+  && value.name.length <= 100;
 
 const isProject = (value: unknown): value is PrototypeProject =>
   isRecord(value)
@@ -101,6 +112,7 @@ const isProject = (value: unknown): value is PrototypeProject =>
   && (value.video === undefined || isVideoSettings(value.video))
   && (value.ttsProvider === undefined || value.ttsProvider === 'elevenlabs' || value.ttsProvider === 'xtts')
   && (value.elevenLabs === undefined || isElevenLabsSettings(value.elevenLabs))
+  && (value.speakers === undefined || (Array.isArray(value.speakers) && value.speakers.every(isSpeaker)))
   && Array.isArray(value.messages)
   && value.messages.length > 0
   && value.messages.every(isMessage);

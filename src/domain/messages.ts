@@ -10,12 +10,13 @@ const cloneTakeRecord = (take: AudioTake): AudioTake => ({
   createdAt: new Date().toISOString(),
 });
 
-export const blankMessage = (input: {role: Role; author: string; text?: string}): PrototypeMessage => {
+export const blankMessage = (input: {role: Role; author: string; text?: string; speakerId?: string}): PrototypeMessage => {
   const text = input.text ?? '';
   const durationMs = estimateSpeechDuration(text || '…');
   return {
     id: newId('msg'),
     role: input.role,
+    speakerId: input.speakerId,
     author: input.author,
     text,
     prePauseMs: 280,

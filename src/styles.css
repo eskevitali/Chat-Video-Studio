@@ -182,6 +182,7 @@ aside h2 { margin: 0 0 14px; font-size: 1.05rem; color: var(--color-primary); }
 .theme-editor select,
 .theme-editor input:not([type="color"]),
 .author-field input,
+.author-field select,
 .take-controls select,
 .message-image-fields select,
 .secret-field input,
@@ -227,7 +228,7 @@ aside h2 { margin: 0 0 14px; font-size: 1.05rem; color: var(--color-primary); }
 .scenario-editor::after { content: 'Потяните угол, чтобы изменить высоту'; display: block; margin-top: 8px; color: var(--color-muted); font-size: 10px; text-align: right; pointer-events: none; flex: 0 0 auto; }
 .scenario-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
 .scenario-actions button { padding: 7px 8px; border-radius: 5px; font-size: 12px; min-height: 40px; min-width: 0; }
-.scenario-actions button:nth-child(3),
+.scenario-actions .span-2,
 .scenario-actions .delete-message { grid-column: 1 / -1; }
 .scenario-actions .delete-message { color: var(--color-danger); border-color: var(--color-danger); }
 .take-row-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -243,7 +244,8 @@ article small { color: var(--color-muted); }
 .message-heading b.audio-ready { color: var(--color-ok-text); background: var(--color-ok-bg); }
 .message-heading b.audio-generating { color: var(--color-error-text); background: var(--color-error-bg); }
 .author-field { display: grid; gap: 5px; margin-top: 12px; color: var(--color-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
-.author-field input { text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 400; }
+.author-field input,
+.author-field select { text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 400; }
 .author-field small { color: var(--color-muted); font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .empty-message { margin: 12px 0 0; padding: 16px; color: var(--color-muted); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 14px; }
 textarea,

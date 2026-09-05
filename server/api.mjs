@@ -348,7 +348,7 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
         const role = body.role === 'assistant' ? 'assistant' : 'user';
         const messageId = String(body.messageId || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 100);
         const apiKey = sanitizeApiKey(body.apiKey) || sanitizeApiKey(environment.ELEVENLABS_API_KEY);
-        const requestedVoiceId = role === 'assistant' ? body.assistantVoiceId : body.userVoiceId;
+        const requestedVoiceId = body.voiceId || (role === 'assistant' ? body.assistantVoiceId : body.userVoiceId);
         if (typeof requestedVoiceId === 'string' && requestedVoiceId.trim() && !sanitizeVoiceId(requestedVoiceId)) {
           throw new Error('Voice ID содержит недопустимые символы.');
         }

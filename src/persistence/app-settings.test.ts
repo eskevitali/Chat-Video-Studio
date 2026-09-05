@@ -11,11 +11,12 @@ describe('app settings', () => {
       apiKey: 'sk_test_123',
       userVoiceId: 'voiceUser',
       assistantVoiceId: 'voiceAssistant',
+      speakerVoiceIds: {},
     });
   });
 
   it('отбрасывает повреждённый JSON и недопустимые голоса', () => {
-    expect(parseAppSettings('{')).toEqual({apiKey: '', userVoiceId: '', assistantVoiceId: ''});
+    expect(parseAppSettings('{')).toEqual({apiKey: '', userVoiceId: '', assistantVoiceId: '', speakerVoiceIds: {}});
     expect(sanitizeVoiceId('bad voice')).toBe('');
     expect(sanitizeVoiceId('ok_Voice-1')).toBe('ok_Voice-1');
   });
@@ -26,10 +27,12 @@ describe('app settings', () => {
       apiKey: 'sk_live',
       userVoiceId: 'aaa',
       assistantVoiceId: 'bbb',
+      speakerVoiceIds: {},
     }))).toEqual({
       apiKey: 'sk_live',
       userVoiceId: 'aaa',
       assistantVoiceId: 'bbb',
+      speakerVoiceIds: {},
     });
   });
 });

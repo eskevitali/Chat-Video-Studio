@@ -1,5 +1,11 @@
 export type Role = 'user' | 'assistant';
 
+export type Speaker = {
+  id: string;
+  role: Role;
+  name: string;
+};
+
 export type ThemePresetId = 'neutral' | 'chatgpt' | 'gemini';
 
 export type ProjectTheme = {
@@ -29,6 +35,7 @@ export type ElevenLabsSettings = {
   modelId: ElevenLabsModelId;
   userVoiceId?: string;
   assistantVoiceId?: string;
+  speakerVoiceIds?: Record<string, string>;
 };
 
 export type WordTiming = {
@@ -61,6 +68,7 @@ export type MessageImage = {
 export type PrototypeMessage = {
   id: string;
   role: Role;
+  speakerId?: string;
   author: string;
   text: string;
   prePauseMs: number;
@@ -78,6 +86,7 @@ export type PrototypeProject = {
   video?: VideoSettings;
   ttsProvider?: TtsProvider;
   elevenLabs?: ElevenLabsSettings;
+  speakers?: Speaker[];
   messages: PrototypeMessage[];
 };
 

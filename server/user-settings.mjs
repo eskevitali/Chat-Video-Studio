@@ -11,10 +11,22 @@ const sanitizeApiKey = (value) => {
   return trimmed;
 };
 
+const sanitizeSpeakerVoiceIds = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const id = String(key).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 80);
+    const voiceId = sanitizeVoiceId(raw);
+    if (id && voiceId) result[id] = voiceId;
+  }
+  return result;
+};
+
 export const emptyUserSettings = () => ({
   apiKey: '',
   userVoiceId: '',
   assistantVoiceId: '',
+  speakerVoiceIds: {},
 });
 
 export const normalizeUserSettings = (value) => {
@@ -23,6 +35,7 @@ export const normalizeUserSettings = (value) => {
     apiKey: sanitizeApiKey(record.apiKey),
     userVoiceId: sanitizeVoiceId(record.userVoiceId),
     assistantVoiceId: sanitizeVoiceId(record.assistantVoiceId),
+    speakerVoiceIds: sanitizeSpeakerVoiceIds(record.speakerVoiceIds),
   };
 };
 
