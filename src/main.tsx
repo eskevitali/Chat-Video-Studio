@@ -706,6 +706,41 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     </div>
   ) : null;
 
+  const studioActions = (className: string) => (
+    <div className={className}>
+      <span className="session-user" title={username}>{username}</span>
+      {cloudSettings ? (
+        <div className="workspace-bar">
+          <select
+            aria-label="Проект"
+            value={projectId}
+            disabled={!workspaceReady || projectList.length === 0}
+            onChange={(event) => void openProject(event.target.value)}
+          >
+            {projectList.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title} · {Math.max(1, Math.round((item.durationMs || 0) / 1000))} с
+              </option>
+            ))}
+          </select>
+          <button className="secondary" type="button" disabled={!workspaceReady || projectList.length >= maxProjects} onClick={() => void createProject()}>Новый</button>
+          <button className="secondary" type="button" disabled={!workspaceReady || !projectId} onClick={() => void deleteProject()}>Удалить</button>
+          <small>{projectList.length}/{maxProjects} · до 60 мин · сейчас {(timeline.durationMs / 60000).toFixed(1)} мин</small>
+        </div>
+      ) : null}
+      <button className="secondary" type="button" onClick={restoreDemo}>Вернуть демо</button>
+      <button className="secondary" type="button" onClick={exportSnapshot}>Сохранить .json</button>
+      <button type="button" onClick={() => fileInput.current?.click()}>Импортировать</button>
+      <button type="button" disabled={renderJob?.status === 'rendering'} onClick={() => void renderVideo()}>
+        {renderJob?.status === 'rendering' ? 'Рендер…' : 'Экспорт MP4'}
+      </button>
+      {renderJob?.status === 'complete' && renderJob.url ? (
+        <a className="download-button" href={renderJob.url} download>Скачать MP4</a>
+      ) : null}
+      <button className="secondary" type="button" onClick={onLogout}>Выйти</button>
+    </div>
+  );
+
   return (
     <main className={`app-shell panel-${mobilePanel}`}>
       <header>
@@ -718,54 +753,23 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
             <h1>{project.title}</h1>
           </div>
         </div>
-        <div className="header-actions">
-          <span className="session-user" title={username}>{username}</span>
-          {cloudSettings ? (
-            <div className="workspace-bar">
-              <select
-                aria-label="Проект"
-                value={projectId}
-                disabled={!workspaceReady || projectList.length === 0}
-                onChange={(event) => void openProject(event.target.value)}
-              >
-                {projectList.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title} · {Math.max(1, Math.round((item.durationMs || 0) / 1000))} с
-                  </option>
-                ))}
-              </select>
-              <button className="secondary" type="button" disabled={!workspaceReady || projectList.length >= maxProjects} onClick={() => void createProject()}>Новый</button>
-              <button className="secondary" type="button" disabled={!workspaceReady || !projectId} onClick={() => void deleteProject()}>Удалить</button>
-              <small>{projectList.length}/{maxProjects} · до 60 мин · сейчас {(timeline.durationMs / 60000).toFixed(1)} мин</small>
-            </div>
-          ) : null}
-          <button className="secondary desktop-only" type="button" onClick={restoreDemo}>Вернуть демо</button>
-          <button className="secondary" type="button" onClick={exportSnapshot}>Сохранить .json</button>
-          <button type="button" onClick={() => fileInput.current?.click()}>Импортировать</button>
-          <button type="button" disabled={renderJob?.status === 'rendering'} onClick={() => void renderVideo()}>
-            {renderJob?.status === 'rendering' ? 'Рендер…' : 'Экспорт MP4'}
-          </button>
-          {renderJob?.status === 'complete' && renderJob.url ? (
-            <a className="download-button" href={renderJob.url} download>Скачать MP4</a>
-          ) : null}
-          <button className="secondary mobile-only" type="button" onClick={restoreDemo}>Демо</button>
-          <button className="secondary" type="button" onClick={onLogout}>Выйти</button>
-          <input
-            ref={fileInput}
-            hidden
-            type="file"
-            accept=".md,.json,text/markdown,text/plain,application/json"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void importFile(file);
-              event.target.value = '';
-            }}
-          />
-        </div>
+        {studioActions('header-actions')}
       </header>
+      <input
+        ref={fileInput}
+        hidden
+        type="file"
+        accept=".md,.json,text/markdown,text/plain,application/json"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void importFile(file);
+          event.target.value = '';
+        }}
+      />
       <div className={`notice ${error ? 'error' : ''}`}>{error || notice}</div>
       <section className="workspace">
         <aside>
+          {studioActions('studio-actions mobile-settings-actions')}
           <details className="theme-editor collapsible-editor settings-editor" open={!settingsReady}>
             <summary className="aside-title">
               <h2>Настройки</h2>

@@ -393,14 +393,19 @@ textarea,
 
 .mobile-nav { display: none; }
 .mobile-only { display: none; }
+.mobile-settings-actions { display: none; }
 @media (max-width: 1050px) { .workspace { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); } }
 @media (max-width: 860px) {
   .app-shell { padding: 16px 14px calc(88px + env(safe-area-inset-bottom)); }
-  header { flex-direction: column; align-items: stretch; gap: 14px; margin-bottom: 16px; }
+  header { flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 12px; }
   h1 { font-size: 1.45rem; }
-  .header-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .header-actions button, .header-actions a, .session-user { min-height: 44px; justify-content: center; }
-  .session-user { grid-column: 1 / -1; }
+  .header-actions { display: none; }
+  .mobile-settings-actions .session-user,
+  .mobile-settings-actions .workspace-bar,
+  .mobile-settings-actions .download-button { grid-column: 1 / -1; }
+  .mobile-settings-actions button,
+  .mobile-settings-actions a,
+  .mobile-settings-actions .session-user { min-height: 44px; justify-content: center; }
   .desktop-only { display: none; }
   .mobile-only { display: inline-flex; align-items: center; justify-content: center; }
   .workspace { display: flex; flex-direction: column; gap: 16px; }
@@ -447,4 +452,10 @@ textarea,
   .app-shell.panel-timeline .preview { display: none; }
   .app-shell.panel-settings .scenario-editor,
   .app-shell.panel-settings .stage { display: none; }
+  .app-shell.panel-settings .mobile-settings-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
 }
