@@ -10,6 +10,7 @@ import {importedChatToProject, parseMarkdownChat} from './import/markdown';
 import {createEditorSnapshot, parseEditorSnapshot, serializeEditorSnapshot} from './persistence/editor-snapshot';
 import {defaultAppSettings, loadAppSettings, parseAppSettings, saveAppSettings, serializeAppSettings, type AppSettings} from './persistence/app-settings';
 import {LoginScreen, type Session} from './login';
+import {SpeechTagEditor} from './speech-tag-editor';
 import {defaultProjectTheme, themePresets} from './remotion/theme';
 import {defaultVideoSettings, getVideoDimensions, resolveVideoSettings, videoDimensions} from './domain/video';
 import {moveMessageBy, reorderMessages} from './domain/messages';
@@ -946,10 +947,10 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
                 />
                 <small>Применяется ко всем репликам этой роли</small>
               </label>
-              <textarea
+              <SpeechTagEditor
                 aria-label={`Текст реплики ${selectedMessageIndex + 1}`}
                 value={selectedMessage.text}
-                onChange={(event) => updateMessage(selectedMessage.id, event.target.value)}
+                onChange={(text) => updateMessage(selectedMessage.id, text)}
               />
               <small>{(selectedMessage.take.durationMs / 1000).toFixed(1)} сек. · {selectedMessage.take.words.length} слов</small>
               {selectedMessage.take.audioPath ? (
