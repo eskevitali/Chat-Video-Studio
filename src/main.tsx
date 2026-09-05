@@ -427,8 +427,7 @@ const App: React.FC<{username: string; onLogout: () => void}> = ({username, onLo
           <img src="/brand/wordmark-40.png" alt="Lokvita" height={40} />
           <div>
             <span className="eyebrow">VChat · {settingsReady ? 'ElevenLabs готов' : 'Нужны настройки голоса'}</span>
-            <h1>Chat Video Studio</h1>
-            <p>{project.title}</p>
+            <h1>{project.title}</h1>
           </div>
         </div>
         <div className="header-actions">
