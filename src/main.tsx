@@ -464,6 +464,61 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     setNotice('Демонстрационный проект восстановлен.');
   };
 
+  const takeHistory = selectedMessage
+    ? (selectedMessage.takes?.length ? selectedMessage.takes : [selectedMessage.take])
+    : [];
+
+  const renderTakePanel = () => selectedMessage ? (
+    <div className="take-panel">
+      <h3>Дубли</h3>
+      <div className="take-controls">
+        <button
+          type="button"
+          className={generating[selectedMessage.id] ? 'generating-button' : ''}
+          disabled={generating[selectedMessage.id] || !selectedMessage.text.trim()}
+          onClick={() => void generateTake(selectedMessage)}
+        >
+          {generating[selectedMessage.id]
+            ? 'Генерация…'
+            : selectedMessage.take.audioPath ? 'Новый дубль' : 'Озвучить'}
+        </button>
+        <small>
+          {generating[selectedMessage.id]
+            ? 'Идёт запрос в ElevenLabs'
+            : takeHistory.filter((take) => take.audioPath).length
+              ? `${takeHistory.filter((take) => take.audioPath).length} дубл.`
+              : 'Ещё нет аудио'}
+        </small>
+      </div>
+      <div className="take-comparison">
+        {takeHistory.map((take, index) => (
+          <div className={take.id === selectedMessage.take.id ? 'take-row active' : 'take-row'} key={take.id}>
+            <div>
+              <b>Дубль {index + 1}{take.id === selectedMessage.take.id ? ' · активен' : ''}</b>
+              <small>{(take.durationMs / 1000).toFixed(1)} сек. · {take.alignment ?? 'approximate'}</small>
+            </div>
+            {take.audioPath ? <audio controls preload="metadata" src={take.audioPath} /> : <span className="no-audio">Без аудио</span>}
+            <button
+              className="secondary"
+              type="button"
+              disabled={take.id === selectedMessage.take.id || !take.audioPath}
+              title={take.sourceText && take.sourceText !== selectedMessage.text
+                ? 'Дубль создан для предыдущей версии текста; тайминги могут не совпадать'
+                : undefined}
+              onClick={() => activateTake(selectedMessage.id, take.id)}
+            >
+              {take.id === selectedMessage.take.id
+                ? 'Активен'
+                : take.sourceText && take.sourceText !== selectedMessage.text
+                  ? 'Активировать старый'
+                  : 'Активировать'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <main className={`app-shell panel-${mobilePanel}`}>
       <header>
@@ -747,34 +802,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
                       : 'Приблизительные тайминги'}
                 </small>
               ) : null}
-              <div className="take-controls">
-                <button
-                  type="button"
-                  className={generating[selectedMessage.id] ? 'generating-button' : ''}
-                  disabled={generating[selectedMessage.id] || !selectedMessage.text.trim()}
-                  onClick={() => void generateTake(selectedMessage)}
-                >
-                  {generating[selectedMessage.id] ? 'Генерация…' : selectedMessage.take.audioPath ? 'Новый дубль' : 'Озвучить'}
-                </button>
-                {(selectedMessage.takes?.length || 0) > 0 ? (
-                  <select
-                    aria-label={`Дубль реплики ${selectedMessageIndex + 1}`}
-                    value={selectedMessage.take.audioPath ? selectedMessage.take.id : ''}
-                    onChange={(event) => activateTake(selectedMessage.id, event.target.value)}
-                  >
-                    {!selectedMessage.take.audioPath ? <option value="">Черновой тайминг</option> : null}
-                    {selectedMessage.takes?.map((take, takeIndex) => (
-                      <option
-                        key={take.id}
-                        value={take.id}
-                      >
-                        Дубль {takeIndex + 1} · {(take.durationMs / 1000).toFixed(1)} сек.
-                        {take.sourceText && take.sourceText !== selectedMessage.text ? ' · старый текст' : ''}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-              </div>
+              {renderTakePanel()}
               <section className="message-images">
                 <div className="message-images-heading">
                   <b>Изображения</b>
@@ -939,27 +967,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
                   </div>
                   <span>{(selectedMessage.endMs / 1000).toFixed(2)} с</span>
                 </div>
-                <div className="take-comparison">
-                  {(selectedMessage.takes?.length ? selectedMessage.takes : [selectedMessage.take]).map((take, index) => (
-                    <div className={take.id === selectedMessage.take.id ? 'take-row active' : 'take-row'} key={take.id}>
-                      <div><b>Дубль {index + 1}</b><small>{(take.durationMs / 1000).toFixed(1)} сек. · {take.alignment ?? 'approximate'}</small></div>
-                      {take.audioPath ? <audio controls preload="metadata" src={take.audioPath} /> : <span className="no-audio">Без аудио</span>}
-                      <button
-                        className="secondary"
-                        type="button"
-                        disabled={take.id === selectedMessage.take.id}
-                        title={take.sourceText && take.sourceText !== selectedMessage.text
-                          ? 'Дубль создан для предыдущей версии текста; тайминги могут не совпадать'
-                          : undefined}
-                        onClick={() => activateTake(selectedMessage.id, take.id)}
-                      >{take.id === selectedMessage.take.id
-                        ? 'Активен'
-                        : take.sourceText && take.sourceText !== selectedMessage.text
-                          ? 'Активировать старый'
-                          : 'Активировать'}</button>
-                    </div>
-                  ))}
-                </div>
+                {renderTakePanel()}
               </>
             ) : null}
           </section>
