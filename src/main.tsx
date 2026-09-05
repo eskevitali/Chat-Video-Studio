@@ -7,7 +7,7 @@ import {prototypeProject} from './data/prototype-project';
 import type {AudioTake, ElevenLabsModelId, ElevenLabsSettings, MessageImage, ProjectTheme, PrototypeMessage, PrototypeProject, ThemePresetId, VideoSettings} from './domain/types';
 import {createApproximateWordTimings, estimateSpeechDuration} from './domain/words';
 import {importedChatToProject, parseMarkdownChat} from './import/markdown';
-import {parseEditorSnapshot, serializeEditorSnapshot} from './persistence/editor-snapshot';
+import {createEditorSnapshot, parseEditorSnapshot, serializeEditorSnapshot} from './persistence/editor-snapshot';
 import {defaultAppSettings, loadAppSettings, parseAppSettings, saveAppSettings, serializeAppSettings, type AppSettings} from './persistence/app-settings';
 import {LoginScreen, type Session} from './login';
 import {defaultProjectTheme, themePresets} from './remotion/theme';
@@ -25,6 +25,8 @@ type RenderJob = {
 };
 
 type MobilePanel = 'script' | 'preview' | 'timeline' | 'settings';
+
+type ProjectMeta = {id: string; title: string; durationMs: number; updatedAt: string};
 
 const loadInitialProject = (): {project: PrototypeProject; notice: string} => {
   try {
@@ -77,9 +79,14 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
   const [settings, setSettings] = useState<AppSettings>(cloudSettings ? defaultAppSettings : loadAppSettings);
   const [settingsHydrated, setSettingsHydrated] = useState(!cloudSettings);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [projectId, setProjectId] = useState('');
+  const [projectList, setProjectList] = useState<ProjectMeta[]>([]);
+  const [workspaceReady, setWorkspaceReady] = useState(!cloudSettings);
+  const [maxProjects, setMaxProjects] = useState(2);
   const fileInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const player = useRef<PlayerRef>(null);
+  const skipNextSave = useRef(true);
   const timeline = useMemo(() => compileTimeline(project), [project]);
   const selectedMessage = timeline.messages.find((message) => message.id === selectedMessageId) ?? timeline.messages[0];
   const selectedMessageIndex = selectedMessage
@@ -145,6 +152,76 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     }, 400);
     return () => window.clearTimeout(timer);
   }, [settings, settingsHydrated, cloudSettings]);
+
+  useEffect(() => {
+    if (!cloudSettings) {
+      setWorkspaceReady(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const listing = await fetch('/api/projects').then((response) => response.json());
+      if (cancelled) return;
+      setMaxProjects(listing.maxProjects || 2);
+      const items = (listing.projects || []) as ProjectMeta[];
+      setProjectList(items);
+      const latest = [...items].sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0];
+      if (latest) {
+        const packed = await fetch(`/api/projects/${latest.id}`).then((response) => response.json());
+        if (cancelled) return;
+        skipNextSave.current = true;
+        setProjectId(latest.id);
+        setProject(packed.snapshot.project);
+        setSelectedMessageId(packed.snapshot.project.messages[0]?.id ?? '');
+        setNotice(`Открыт проект «${packed.snapshot.project.title}». Слотов ${items.length} из ${listing.maxProjects || 2}.`);
+      } else {
+        const created = await fetch('/api/projects', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: serializeEditorSnapshot(project),
+        }).then((response) => response.json());
+        if (cancelled) return;
+        if (created.error) setError(created.error);
+        else {
+          skipNextSave.current = true;
+          setProjectId(created.id);
+          setProjectList([created]);
+          setNotice('Создан слот 1 из 2. Каждый проект — до 60 минут. Дубли и медиа хранятся в этом слоте.');
+        }
+      }
+      setWorkspaceReady(true);
+    })().catch(() => {
+      if (!cancelled) {
+        setError('Не удалось открыть кабинет проектов.');
+        setWorkspaceReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cloudSettings]);
+
+  useEffect(() => {
+    if (!cloudSettings || !workspaceReady || !projectId) return;
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: serializeEditorSnapshot(project),
+      }).then(async (response) => {
+        const payload = await response.json() as ProjectMeta & {error?: string};
+        if (!response.ok) setError(payload.error || 'Не удалось сохранить проект.');
+        else {
+          setProjectList((current) => current.map((item) => item.id === projectId ? {...item, ...payload} : item));
+        }
+      });
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [project, projectId, cloudSettings, workspaceReady]);
 
   const settingsReady = Boolean(settings.apiKey && settings.userVoiceId && settings.assistantVoiceId);
 
@@ -215,7 +292,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
       const response = await fetch('/api/render', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({project}),
+        body: JSON.stringify({project, projectId}),
       });
       const initial = await response.json() as RenderJob & {error?: string};
       if (!response.ok || !initial.id) throw new Error(initial.error || 'Не удалось запустить Remotion.');
@@ -319,6 +396,10 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     const userVoiceId = project.elevenLabs?.userVoiceId?.trim() || settings.userVoiceId;
     const assistantVoiceId = project.elevenLabs?.assistantVoiceId?.trim() || settings.assistantVoiceId;
     const voiceId = message.role === 'assistant' ? assistantVoiceId : userVoiceId;
+    if (cloudSettings && !projectId) {
+      setError('Сначала сохраните проект (доступно 2 слота, каждый до 60 минут).');
+      return;
+    }
     if (!settings.apiKey) {
       setMobilePanel('settings');
       setError('Укажите API-ключ ElevenLabs в настройках.');
@@ -343,6 +424,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
           role: message.role,
           text: message.text,
           apiKey: settings.apiKey,
+          projectId,
           modelId: project.elevenLabs?.modelId,
           userVoiceId,
           assistantVoiceId,
@@ -392,6 +474,7 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
         headers: {
           'Content-Type': file.type,
           'X-Message-Id': messageId,
+          'X-Project-Id': projectId,
           'X-File-Name': encodeURIComponent(file.name),
           'X-Image-Width': String(width),
           'X-Image-Height': String(height),
@@ -464,6 +547,60 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
     setNotice('Демонстрационный проект восстановлен.');
   };
 
+  const openProject = async (id: string) => {
+    const packed = await fetch(`/api/projects/${id}`).then((response) => response.json());
+    if (packed.error || !packed.snapshot?.project) {
+      setError(packed.error || 'Не удалось открыть проект.');
+      return;
+    }
+    skipNextSave.current = true;
+    setProjectId(id);
+    setProject(packed.snapshot.project);
+    setSelectedMessageId(packed.snapshot.project.messages[0]?.id ?? '');
+    setNotice(`Открыт проект «${packed.snapshot.project.title}».`);
+  };
+
+  const createProject = async () => {
+    if (projectList.length >= maxProjects) {
+      setError(`Можно хранить не больше ${maxProjects} проектов. Удалите один.`);
+      return;
+    }
+    const blank = importedChatToProject(parseMarkdownChat('# Новый проект\n\n## Пользователь\n\nТекст реплики.\n'));
+    const created = await fetch('/api/projects', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: serializeEditorSnapshot(blank),
+    }).then((response) => response.json());
+    if (created.error) {
+      setError(created.error);
+      return;
+    }
+    skipNextSave.current = true;
+    setProjectId(created.id);
+    setProject(blank);
+    setSelectedMessageId(blank.messages[0]?.id ?? '');
+    setProjectList((current) => [...current, created]);
+    setNotice(`Создан слот ${projectList.length + 1} из ${maxProjects}.`);
+  };
+
+  const deleteProject = async () => {
+    if (!projectId) return;
+    if (!window.confirm('Удалить этот проект вместе с дублями, картинками и MP4? Восстановить нельзя.')) return;
+    const payload = await fetch(`/api/projects/${projectId}`, {method: 'DELETE'}).then((response) => response.json());
+    if (payload.error) {
+      setError(payload.error);
+      return;
+    }
+    const remaining = projectList.filter((item) => item.id !== projectId);
+    setProjectList(remaining);
+    if (remaining[0]) await openProject(remaining[0].id);
+    else {
+      setProjectId('');
+      await createProject();
+    }
+    setNotice('Проект и его медиа удалены с сервера.');
+  };
+
   const takeHistory = selectedMessage
     ? (selectedMessage.takes?.length ? selectedMessage.takes : [selectedMessage.take])
     : [];
@@ -533,6 +670,25 @@ const App: React.FC<{username: string; onLogout: () => void; cloudSettings: bool
         </div>
         <div className="header-actions">
           <span className="session-user" title={username}>{username}</span>
+          {cloudSettings ? (
+            <div className="workspace-bar">
+              <select
+                aria-label="Проект"
+                value={projectId}
+                disabled={!workspaceReady || projectList.length === 0}
+                onChange={(event) => void openProject(event.target.value)}
+              >
+                {projectList.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title} · {Math.max(1, Math.round((item.durationMs || 0) / 1000))} с
+                  </option>
+                ))}
+              </select>
+              <button className="secondary" type="button" disabled={!workspaceReady || projectList.length >= maxProjects} onClick={() => void createProject()}>Новый</button>
+              <button className="secondary" type="button" disabled={!workspaceReady || !projectId} onClick={() => void deleteProject()}>Удалить</button>
+              <small>{projectList.length}/{maxProjects} · до 60 мин · сейчас {(timeline.durationMs / 60000).toFixed(1)} мин</small>
+            </div>
+          ) : null}
           <button className="secondary desktop-only" type="button" onClick={restoreDemo}>Вернуть демо</button>
           <button className="secondary" type="button" onClick={exportSnapshot}>Сохранить .json</button>
           <button type="button" onClick={() => fileInput.current?.click()}>Импортировать</button>

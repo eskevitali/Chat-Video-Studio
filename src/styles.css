@@ -69,6 +69,26 @@ header p { margin: 0; color: var(--color-muted); font-size: 0.95rem; }
   font-size: 13px;
   font-weight: 700;
 }
+.workspace-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.workspace-bar select {
+  min-height: 44px;
+  min-width: 160px;
+  flex: 1 1 160px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+}
+.workspace-bar small { color: var(--color-muted); font-size: 12px; }
 
 button {
   border: 0;
@@ -290,7 +310,8 @@ textarea {
 .waveform { height: 72px; display: flex; align-items: center; gap: 2px; padding: 8px; border-left: 2px solid var(--color-earth); border-right: 2px solid var(--color-earth); background: var(--color-primary-soft); }
 .waveform i { flex: 1; min-width: 2px; border-radius: 2px; background: linear-gradient(var(--color-earth), var(--color-primary)); opacity: .85; }
 .take-comparison { display: grid; gap: 8px; margin-top: 16px; }
-.take-row { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(180px, 1.5fr) auto; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-surface); }
+.take-panel .take-row,
+.take-row { display: grid; grid-template-columns: 1fr; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-surface); }
 .take-row.active { border-color: var(--color-primary); background: var(--color-primary-soft); }
 .take-row b, .take-row small { display: block; }
 .take-row b { font-size: 13px; }

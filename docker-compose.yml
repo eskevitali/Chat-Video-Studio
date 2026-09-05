@@ -13,11 +13,16 @@ services:
       CHROME_NO_SANDBOX: "1"
       RENDER_CONCURRENCY: "1"
       SETTINGS_DIR: /app/data/settings
+      WORKSPACE_DIR: /app/data/users
+      WORKSPACE_MAX_PROJECTS: "2"
+      WORKSPACE_MAX_DURATION_MS: "3600000"
     volumes:
       - vchat-generated:/app/public/generated
       - vchat-uploads:/app/public/uploads
       - vchat-renders:/app/public/renders
       - vchat-settings:/app/data/settings
+      - vchat-users:/app/data/users
+      - vchat-workspace:/app/public/workspace
     networks:
       - nginx_default
     shm_size: "2gb"
@@ -38,3 +43,5 @@ volumes:
   vchat-uploads:
   vchat-renders:
   vchat-settings:
+  vchat-users:
+  vchat-workspace:

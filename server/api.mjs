@@ -5,6 +5,8 @@ import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {createAuth} from './auth.mjs';
 import {createUserSettingsStore} from './user-settings.mjs';
+import {createWorkspace} from './workspace.mjs';
+import {sendFile} from './static.mjs';
 
 const MAX_BODY_BYTES = 100_000;
 const MAX_IMAGE_BYTES = 10_000_000;
@@ -85,7 +87,7 @@ const applyCors = (request, response, environment) => {
     response.setHeader('Access-Control-Allow-Origin', origin);
     response.setHeader('Vary', 'Origin');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Message-Id, X-File-Name, X-Image-Width, X-Image-Height');
-    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     response.setHeader('Access-Control-Allow-Credentials', 'true');
   }
 };
@@ -161,10 +163,34 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
   const userSettings = createUserSettingsStore({
     directory: environment.SETTINGS_DIR || resolve(root, 'data/settings'),
   });
+  const workspace = createWorkspace({root, environment});
+  const actorId = (request) => auth.sessionOf(request)?.userId || (auth.enabled ? '' : 'local');
 
   return async (request, response) => {
     applyCors(request, response, environment);
     const path = pathnameOf(request);
+
+    if (path.startsWith('/workspace/')) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        json(response, 405, {error: 'Метод не поддерживается.'});
+        return true;
+      }
+      const userId = actorId(request);
+      if (auth.enabled && !userId) {
+        json(response, 401, {error: 'Нужна авторизация.'});
+        return true;
+      }
+      const parts = path.split('/').filter(Boolean);
+      const projectId = parts[1] || '';
+      if (userId && !(await workspace.owns(userId, projectId))) {
+        json(response, 404, {error: 'Файл не найден.'});
+        return true;
+      }
+      const file = workspace.publicFile(projectId, parts.slice(2));
+      if (file && await sendFile(request, response, file)) return true;
+      json(response, 404, {error: 'Файл не найден.'});
+      return true;
+    }
 
     if (!path.startsWith('/api/')) return false;
 
@@ -265,6 +291,56 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
       return true;
     }
 
+    if (path === '/api/projects' && request.method === 'GET') {
+      json(response, 200, {
+        projects: await workspace.list(actorId(request)),
+        maxProjects: workspace.maxProjects,
+        maxDurationMs: workspace.maxDurationMs,
+      });
+      return true;
+    }
+
+    if (path === '/api/projects' && request.method === 'POST') {
+      try {
+        const body = await readJson(request, 5_000_000);
+        const created = await workspace.create(actorId(request), body);
+        json(response, 201, created);
+      } catch (error) {
+        json(response, 400, {error: error instanceof Error ? error.message : 'Не удалось создать проект.'});
+      }
+      return true;
+    }
+
+    if (path.startsWith('/api/projects/')) {
+      const projectId = path.slice('/api/projects/'.length).split('/')[0];
+      const userId = actorId(request);
+      if (request.method === 'GET') {
+        try {
+          json(response, 200, {id: projectId, snapshot: await workspace.load(userId, projectId)});
+        } catch (error) {
+          json(response, 404, {error: error instanceof Error ? error.message : 'Проект не найден.'});
+        }
+        return true;
+      }
+      if (request.method === 'PUT') {
+        try {
+          const body = await readJson(request, 5_000_000);
+          json(response, 200, await workspace.save(userId, projectId, body));
+        } catch (error) {
+          json(response, 400, {error: error instanceof Error ? error.message : 'Не удалось сохранить проект.'});
+        }
+        return true;
+      }
+      if (request.method === 'DELETE') {
+        try {
+          json(response, 200, await workspace.remove(userId, projectId));
+        } catch (error) {
+          json(response, 400, {error: error instanceof Error ? error.message : 'Не удалось удалить проект.'});
+        }
+        return true;
+      }
+    }
+
     if (path === '/api/tts' && request.method === 'POST') {
       try {
         const body = await readJson(request);
@@ -289,6 +365,11 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
         if (text.length > 10_000) throw new Error('Реплика превышает 10 000 символов.');
         if (!apiKey) throw new Error('ElevenLabs API key не настроен.');
         if (!voiceId) throw new Error(`Голос для роли ${role} не настроен.`);
+        const projectId = String(body.projectId || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 80);
+        const userId = actorId(request);
+        if (!projectId || !(await workspace.owns(userId, projectId))) {
+          throw new Error('Сначала сохраните проект в кабинете (не больше двух, до 60 минут).');
+        }
 
         const queuePosition = ttsQueue.size + 1;
         const take = await ttsQueue.add(async () => {
@@ -319,13 +400,13 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
           const words = alignmentToWords(payload.alignment);
           const durationMs = Math.max(...payload.alignment.character_end_times_seconds.map((value) => Math.round(value * 1000)));
           const takeId = `take-${Date.now()}-${randomUUID().slice(0, 8)}`;
-          const directory = resolve(root, 'public/generated', messageId);
+          const directory = workspace.mediaDirectory(projectId, 'generated', messageId);
           await mkdir(directory, {recursive: true});
           await writeFile(resolve(directory, `${takeId}.mp3`), Buffer.from(payload.audio_base64, 'base64'));
 
           return {
             id: takeId,
-            audioPath: `generated/${messageId}/${takeId}.mp3`,
+            audioPath: workspace.mediaUrl(projectId, `generated/${messageId}/${takeId}.mp3`),
             durationMs,
             words,
             sourceText: text,
@@ -352,6 +433,11 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
         let fileName = 'image';
         try { fileName = decodeURIComponent(String(request.headers['x-file-name'] || 'image')); } catch {}
 
+        const projectId = String(request.headers['x-project-id'] || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 80);
+        const userId = actorId(request);
+        if (!projectId || !(await workspace.owns(userId, projectId))) {
+          throw new Error('Сначала сохраните проект в кабинете.');
+        }
         if (!messageId) throw new Error('Некорректный идентификатор реплики.');
         if (!extension) throw new Error('Поддерживаются только PNG, JPEG и WebP.');
         if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width > 20_000 || height > 20_000) {
@@ -361,13 +447,13 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
         const bytes = await readBuffer(request, MAX_IMAGE_BYTES);
         if (!bytes.length) throw new Error('Файл изображения пуст.');
         const imageId = `image-${Date.now()}-${randomUUID().slice(0, 8)}`;
-        const directory = resolve(root, 'public/uploads', messageId);
+        const directory = workspace.mediaDirectory(projectId, 'uploads', messageId);
         await mkdir(directory, {recursive: true});
         await writeFile(resolve(directory, `${imageId}.${extension}`), bytes);
 
         json(response, 200, {image: {
           id: imageId,
-          path: `uploads/${messageId}/${imageId}.${extension}`,
+          path: workspace.mediaUrl(projectId, `uploads/${messageId}/${imageId}.${extension}`),
           fileName: fileName.slice(0, 200),
           width,
           height,
@@ -405,10 +491,15 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
           throw new Error('Проект не содержит реплик.');
         }
         if (project.messages.length > 500) throw new Error('В одном рендере допускается не более 500 реплик.');
+        const projectId = String(body.projectId || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 80);
+        const userId = actorId(request);
+        if (!projectId || !(await workspace.owns(userId, projectId))) {
+          throw new Error('Сначала сохраните проект в кабинете.');
+        }
 
         const id = `render-${Date.now()}-${randomUUID().slice(0, 8)}`;
         const jobsDirectory = resolve(root, '.render-jobs');
-        const outputDirectory = resolve(root, 'public/renders');
+        const outputDirectory = workspace.mediaDirectory(projectId, 'renders');
         const propsPath = resolve(jobsDirectory, `${id}.json`);
         const outputPath = resolve(outputDirectory, `${id}.mp4`);
         await mkdir(jobsDirectory, {recursive: true});
@@ -451,7 +542,7 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
         child.on('close', async (code) => {
           if (job.status !== 'failed') {
             Object.assign(job, code === 0
-              ? {status: 'complete', url: `/renders/${id}.mp4`, finishedAt: new Date().toISOString()}
+              ? {status: 'complete', url: `/${workspace.mediaUrl(projectId, `renders/${id}.mp4`)}`, finishedAt: new Date().toISOString()}
               : {status: 'failed', error: output.trim() || `Remotion завершился с кодом ${code}.`, finishedAt: new Date().toISOString()});
           }
           await unlink(propsPath).catch(() => undefined);

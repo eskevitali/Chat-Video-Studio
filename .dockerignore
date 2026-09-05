@@ -11,6 +11,8 @@ output
 .env.local
 .env.*.local
 data/settings
+data/users
+public/workspace
 public/generated
 public/uploads
 public/renders

@@ -18,3 +18,5 @@ voice-samples/*.flac
 .env.local
 .env.*.local
 data/settings/
+data/users/
+public/workspace/
