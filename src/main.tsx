@@ -4,10 +4,11 @@ import {Player, type PlayerRef} from '@remotion/player';
 import {ChatVideo} from './remotion/ChatVideo';
 import {compileTimeline} from './domain/timeline';
 import {prototypeProject} from './data/prototype-project';
-import type {AudioTake, ElevenLabsModelId, ElevenLabsSettings, MessageImage, ProjectTheme, PrototypeMessage, PrototypeProject, ThemePresetId, TtsProvider, VideoSettings} from './domain/types';
+import type {AudioTake, ElevenLabsModelId, ElevenLabsSettings, MessageImage, ProjectTheme, PrototypeMessage, PrototypeProject, ThemePresetId, VideoSettings} from './domain/types';
 import {createApproximateWordTimings, estimateSpeechDuration} from './domain/words';
 import {importedChatToProject, parseMarkdownChat} from './import/markdown';
 import {parseEditorSnapshot, serializeEditorSnapshot} from './persistence/editor-snapshot';
+import {loadAppSettings, saveAppSettings, type AppSettings} from './persistence/app-settings';
 import {defaultProjectTheme, themePresets} from './remotion/theme';
 import {defaultVideoSettings, getVideoDimensions, resolveVideoSettings, videoDimensions} from './domain/video';
 import {moveMessageBy, reorderMessages} from './domain/messages';
@@ -21,6 +22,8 @@ type RenderJob = {
   url?: string;
   error?: string;
 };
+
+type MobilePanel = 'script' | 'preview' | 'timeline' | 'settings';
 
 const loadInitialProject = (): {project: PrototypeProject; notice: string} => {
   try {
@@ -69,6 +72,9 @@ const App: React.FC = () => {
   const [timelineFit, setTimelineFit] = useState(true);
   const [draggedMessageId, setDraggedMessageId] = useState('');
   const [dropTargetId, setDropTargetId] = useState('');
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>('script');
+  const [settings, setSettings] = useState<AppSettings>(loadAppSettings);
+  const [showApiKey, setShowApiKey] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const player = useRef<PlayerRef>(null);
@@ -88,6 +94,35 @@ const App: React.FC = () => {
       setError('Автосохранение недоступно: локальное хранилище браузера переполнено или заблокировано.');
     }
   }, [project]);
+
+  useEffect(() => {
+    try {
+      saveAppSettings(settings);
+    } catch {
+      setError('Не удалось сохранить настройки ElevenLabs в браузере.');
+    }
+  }, [settings]);
+
+  const settingsReady = Boolean(settings.apiKey && settings.userVoiceId && settings.assistantVoiceId);
+
+  useEffect(() => {
+    setProject((current) => ({
+      ...current,
+      ttsProvider: 'elevenlabs',
+      elevenLabs: {
+        modelId: current.elevenLabs?.modelId ?? 'eleven_multilingual_v2',
+        ...current.elevenLabs,
+        userVoiceId: settings.userVoiceId || current.elevenLabs?.userVoiceId,
+        assistantVoiceId: settings.assistantVoiceId || current.elevenLabs?.assistantVoiceId,
+      },
+    }));
+  }, [settings.userVoiceId, settings.assistantVoiceId]);
+
+  const updateSettings = (patch: Partial<AppSettings>) => {
+    setSettings((current) => ({...current, ...patch}));
+    setError('');
+    setNotice('Настройки ElevenLabs сохранены в этом браузере. Ключ не попадает в JSON-снимок.');
+  };
 
   const changeTimelineZoom = (direction: -1 | 1) => {
     setTimelineFit(false);
@@ -236,15 +271,24 @@ const App: React.FC = () => {
 
   const generateTake = async (message: PrototypeMessage) => {
     const estimatedCredits = message.text.length;
-    const provider = project.ttsProvider ?? 'elevenlabs';
-    if (provider === 'elevenlabs'
-      && !window.confirm(`Отправить реплику в ElevenLabs?\n\n${estimatedCredits} символов ≈ ${estimatedCredits} кредитов.`)) return;
+    const userVoiceId = project.elevenLabs?.userVoiceId?.trim() || settings.userVoiceId;
+    const assistantVoiceId = project.elevenLabs?.assistantVoiceId?.trim() || settings.assistantVoiceId;
+    const voiceId = message.role === 'assistant' ? assistantVoiceId : userVoiceId;
+    if (!settings.apiKey) {
+      setMobilePanel('settings');
+      setError('Укажите API-ключ ElevenLabs в настройках.');
+      return;
+    }
+    if (!voiceId) {
+      setMobilePanel('settings');
+      setError(`Укажите Voice ID для роли «${message.role === 'assistant' ? 'ассистент' : 'пользователь'}» в настройках.`);
+      return;
+    }
+    if (!window.confirm(`Отправить реплику в ElevenLabs?\n\n${estimatedCredits} символов ≈ ${estimatedCredits} кредитов.`)) return;
 
     setGenerating((current) => ({...current, [message.id]: true}));
     setError('');
-    setNotice(provider === 'xtts'
-      ? `XTTS локально генерирует реплику «${message.author}». Первый запуск может быть долгим…`
-      : `Генерируется реплика «${message.author}»…`);
+    setNotice(`Генерируется реплика «${message.author}»…`);
     try {
       const response = await fetch('/api/tts', {
         method: 'POST',
@@ -253,10 +297,10 @@ const App: React.FC = () => {
           messageId: message.id,
           role: message.role,
           text: message.text,
-          provider,
+          apiKey: settings.apiKey,
           modelId: project.elevenLabs?.modelId,
-          userVoiceId: project.elevenLabs?.userVoiceId?.trim() || undefined,
-          assistantVoiceId: project.elevenLabs?.assistantVoiceId?.trim() || undefined,
+          userVoiceId,
+          assistantVoiceId,
         }),
       });
       const payload = await response.json() as {take?: AudioTake; error?: string};
@@ -376,15 +420,15 @@ const App: React.FC = () => {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell panel-${mobilePanel}`}>
       <header>
         <div>
-          <span className="eyebrow">Редактор сценария · Alpha</span>
+          <span className="eyebrow">VChat · {settingsReady ? 'ElevenLabs готов' : 'Нужны настройки голоса'}</span>
           <h1>Chat Video Studio</h1>
           <p>{project.title}</p>
         </div>
         <div className="header-actions">
-          <button className="secondary" type="button" onClick={restoreDemo}>Вернуть демо</button>
+          <button className="secondary desktop-only" type="button" onClick={restoreDemo}>Вернуть демо</button>
           <button className="secondary" type="button" onClick={exportSnapshot}>Сохранить .json</button>
           <button type="button" onClick={() => fileInput.current?.click()}>Импортировать</button>
           <button type="button" disabled={renderJob?.status === 'rendering'} onClick={() => void renderVideo()}>
@@ -393,6 +437,7 @@ const App: React.FC = () => {
           {renderJob?.status === 'complete' && renderJob.url ? (
             <a className="download-button" href={renderJob.url} download>Скачать MP4</a>
           ) : null}
+          <button className="secondary mobile-only" type="button" onClick={restoreDemo}>Демо</button>
           <input
             ref={fileInput}
             hidden
@@ -409,6 +454,51 @@ const App: React.FC = () => {
       <div className={`notice ${error ? 'error' : ''}`}>{error || notice}</div>
       <section className="workspace">
         <aside>
+          <details className="theme-editor collapsible-editor settings-editor" open={!settingsReady}>
+            <summary className="aside-title">
+              <h2>Настройки</h2>
+              <small>{settingsReady ? 'Ключ в этом браузере' : 'Ключ и голоса'}</small>
+            </summary>
+            <div className="editor-body">
+              <label>
+                API-ключ ElevenLabs
+                <span className="secret-field">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={settings.apiKey}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="xi-…"
+                    onChange={(event) => updateSettings({apiKey: event.target.value})}
+                  />
+                  <button className="secondary" type="button" onClick={() => setShowApiKey((current) => !current)}>
+                    {showApiKey ? 'Скрыть' : 'Показать'}
+                  </button>
+                </span>
+              </label>
+              <label>
+                Voice ID пользователя
+                <input
+                  value={settings.userVoiceId}
+                  spellCheck={false}
+                  placeholder="21m00Tcm4TlvDq8ikWAM"
+                  onChange={(event) => updateSettings({userVoiceId: event.target.value.trim()})}
+                />
+              </label>
+              <label>
+                Voice ID ассистента
+                <input
+                  value={settings.assistantVoiceId}
+                  spellCheck={false}
+                  placeholder="второй голос ElevenLabs"
+                  onChange={(event) => updateSettings({assistantVoiceId: event.target.value.trim()})}
+                />
+              </label>
+              <p className="provider-note">
+                Ключ хранится только в этом браузере и уходит на сервер в момент озвучки. В JSON-снимок проекта он не записывается.
+              </p>
+            </div>
+          </details>
           <details className="theme-editor collapsible-editor">
             <summary className="aside-title">
               <h2>Оформление</h2>
@@ -519,29 +609,12 @@ const App: React.FC = () => {
           <details className="theme-editor video-editor collapsible-editor">
             <summary className="aside-title">
               <h2>Озвучка</h2>
-              <small>{project.ttsProvider === 'xtts' ? 'Локально' : 'Облако'}</small>
+              <small>ElevenLabs</small>
             </summary>
             <div className="editor-body">
-            <label>
-              Движок новых дублей
-              <select
-                value={project.ttsProvider ?? 'elevenlabs'}
-                onChange={(event) => {
-                  const ttsProvider = event.target.value as TtsProvider;
-                  setProject((current) => ({...current, ttsProvider}));
-                  setNotice(ttsProvider === 'xtts'
-                    ? 'Выбран локальный XTTS v2. ElevenLabs-кредиты не расходуются.'
-                    : 'Выбран ElevenLabs. Перед генерацией будет показан расход кредитов.');
-                }}
-              >
-                <option value="elevenlabs">ElevenLabs</option>
-                <option value="xtts">XTTS v2 · локально</option>
-              </select>
-            </label>
-            {(project.ttsProvider ?? 'elevenlabs') === 'elevenlabs' ? (
               <div className="elevenlabs-settings">
                 <label>
-                  Модель ElevenLabs
+                  Модель
                   <select
                     value={elevenLabs.modelId}
                     onChange={(event) => updateElevenLabs({modelId: event.target.value as ElevenLabsModelId})}
@@ -551,34 +624,13 @@ const App: React.FC = () => {
                     <option value="eleven_turbo_v2_5">Turbo v2.5 · устаревающая</option>
                   </select>
                 </label>
-                <label>
-                  Voice ID пользователя
-                  <input
-                    value={elevenLabs.userVoiceId ?? ''}
-                    placeholder="Из .env.local"
-                    spellCheck={false}
-                    onChange={(event) => updateElevenLabs({userVoiceId: event.target.value})}
-                  />
-                </label>
-                <label>
-                  Voice ID ассистента
-                  <input
-                    value={elevenLabs.assistantVoiceId ?? ''}
-                    placeholder="Из .env.local"
-                    spellCheck={false}
-                    onChange={(event) => updateElevenLabs({assistantVoiceId: event.target.value})}
-                  />
-                </label>
               </div>
-            ) : null}
-            <p className="provider-note">
-              {(project.ttsProvider ?? 'elevenlabs') === 'xtts'
-                ? 'XTTS использует два локальных образца из .env.local. Тайминги слов пока рассчитываются приблизительно.'
-                : 'Пустой Voice ID использует соответствующее значение из .env.local.'}
-            </p>
+              <p className="provider-note">
+                Голоса и API-ключ задаются в блоке «Настройки». Новые дубли всегда идут через ElevenLabs.
+              </p>
             </div>
           </details>
-          <section className="scenario-editor">
+          <section className="scenario-editor" data-panel="script">
             <div className="aside-title">
               <h2>Сценарий</h2>
               <small>{(timeline.durationMs / 1000).toFixed(1)} сек. · {timeline.messages.length}</small>
@@ -734,6 +786,7 @@ const App: React.FC = () => {
         <div className="stage">
           <div
             className="preview"
+            data-panel="preview"
             style={{
               width: video.format === 'landscape' ? 'min(100%, 900px)' : video.format === 'square' ? 'min(100%, 720px)' : 'min(100%, 480px)',
               aspectRatio: `${dimensions.width} / ${dimensions.height}`,
@@ -752,7 +805,7 @@ const App: React.FC = () => {
               style={{width: '100%', height: '100%'}}
             />
           </div>
-          <section className="timeline-editor">
+          <section className="timeline-editor" data-panel="timeline">
             <div className="timeline-header">
               <div>
                 <span className="eyebrow">Таймлайн</span>
@@ -859,6 +912,21 @@ const App: React.FC = () => {
           </section>
         </div>
       </section>
+      <nav className="mobile-nav" aria-label="Разделы редактора">
+        {([
+          ['script', 'Сценарий'],
+          ['preview', 'Превью'],
+          ['timeline', 'Таймлайн'],
+          ['settings', 'Настройки'],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={mobilePanel === id ? 'active' : ''}
+            onClick={() => setMobilePanel(id)}
+          >{label}</button>
+        ))}
+      </nav>
     </main>
   );
 };

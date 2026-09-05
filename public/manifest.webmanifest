@@ -1,0 +1,9 @@
+{
+  "name": "Chat Video Studio",
+  "short_name": "VChat",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#10141c",
+  "theme_color": "#10141c",
+  "lang": "ru"
+}

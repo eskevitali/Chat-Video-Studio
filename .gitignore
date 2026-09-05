@@ -3,11 +3,11 @@ node_modules/
 dist/
 output/
 public/audio/*.wav
-public/audio/elevenlabs-*.mp3
 public/generated/
 public/renders/
 public/uploads/
 .render-jobs/
+.runtime/
 .venv-xtts/
 __pycache__/
 voice-samples/*.wav

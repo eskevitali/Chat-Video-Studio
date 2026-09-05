@@ -1,0 +1,36 @@
+services:
+  vchat:
+    build: .
+    image: vchat:local
+    container_name: vchat
+    restart: unless-stopped
+    environment:
+      PUBLIC_ORIGIN: https://vchat.lokvita.org
+      PORT: "4173"
+      HOST: 0.0.0.0
+      CHROME_PATH: /usr/bin/chromium
+      CHROME_NO_SANDBOX: "1"
+      RENDER_CONCURRENCY: "1"
+    volumes:
+      - vchat-generated:/app/public/generated
+      - vchat-uploads:/app/public/uploads
+      - vchat-renders:/app/public/renders
+    networks:
+      - nginx_default
+    shm_size: "2gb"
+    mem_limit: 6g
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+networks:
+  nginx_default:
+    external: true
+
+volumes:
+  vchat-generated:
+  vchat-uploads:
+  vchat-renders:
