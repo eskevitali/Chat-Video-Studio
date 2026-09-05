@@ -9,6 +9,7 @@ import {createApproximateWordTimings, estimateSpeechDuration} from './domain/wor
 import {importedChatToProject, parseMarkdownChat} from './import/markdown';
 import {parseEditorSnapshot, serializeEditorSnapshot} from './persistence/editor-snapshot';
 import {loadAppSettings, saveAppSettings, type AppSettings} from './persistence/app-settings';
+import {LoginScreen, type Session} from './login';
 import {defaultProjectTheme, themePresets} from './remotion/theme';
 import {defaultVideoSettings, getVideoDimensions, resolveVideoSettings, videoDimensions} from './domain/video';
 import {moveMessageBy, reorderMessages} from './domain/messages';
@@ -59,7 +60,7 @@ const getImageDimensions = (file: File) => new Promise<{width: number; height: n
   image.src = url;
 });
 
-const App: React.FC = () => {
+const App: React.FC<{username: string; onLogout: () => void}> = ({username, onLogout}) => {
   const [initial] = useState(loadInitialProject);
   const [project, setProject] = useState<PrototypeProject>(initial.project);
   const [notice, setNotice] = useState(initial.notice);
@@ -422,12 +423,16 @@ const App: React.FC = () => {
   return (
     <main className={`app-shell panel-${mobilePanel}`}>
       <header>
-        <div>
-          <span className="eyebrow">VChat · {settingsReady ? 'ElevenLabs готов' : 'Нужны настройки голоса'}</span>
-          <h1>Chat Video Studio</h1>
-          <p>{project.title}</p>
+        <div className="brand">
+          <img src="/brand/wordmark-40.png" alt="Lokvita" height={40} />
+          <div>
+            <span className="eyebrow">VChat · {settingsReady ? 'ElevenLabs готов' : 'Нужны настройки голоса'}</span>
+            <h1>Chat Video Studio</h1>
+            <p>{project.title}</p>
+          </div>
         </div>
         <div className="header-actions">
+          <span className="session-user" title={username}>{username}</span>
           <button className="secondary desktop-only" type="button" onClick={restoreDemo}>Вернуть демо</button>
           <button className="secondary" type="button" onClick={exportSnapshot}>Сохранить .json</button>
           <button type="button" onClick={() => fileInput.current?.click()}>Импортировать</button>
@@ -438,6 +443,7 @@ const App: React.FC = () => {
             <a className="download-button" href={renderJob.url} download>Скачать MP4</a>
           ) : null}
           <button className="secondary mobile-only" type="button" onClick={restoreDemo}>Демо</button>
+          <button className="secondary" type="button" onClick={onLogout}>Выйти</button>
           <input
             ref={fileInput}
             hidden
@@ -931,4 +937,39 @@ const App: React.FC = () => {
   );
 };
 
-createRoot(document.getElementById('root')!).render(<App />);
+const Root: React.FC = () => {
+  const [session, setSession] = useState<Session | 'loading' | null>('loading');
+
+  useEffect(() => {
+    fetch('/api/session')
+      .then(async (response) => {
+        if (!response.ok) {
+          setSession(null);
+          return;
+        }
+        const payload = await response.json() as Session;
+        setSession({username: payload.username, membershipStatus: payload.membershipStatus});
+      })
+      .catch(() => setSession(null));
+  }, []);
+
+  if (session === 'loading') {
+    return (
+      <section className="login-screen">
+        <div className="login-card"><p>Загрузка…</p></div>
+      </section>
+    );
+  }
+  if (!session) return <LoginScreen onSuccess={setSession} />;
+
+  return (
+    <App
+      username={session.username}
+      onLogout={() => {
+        void fetch('/api/logout', {method: 'POST'}).finally(() => setSession(null));
+      }}
+    />
+  );
+};
+
+createRoot(document.getElementById('root')!).render(<Root />);

@@ -3,7 +3,7 @@
   "short_name": "VChat",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#10141c",
-  "theme_color": "#10141c",
+  "background_color": "#c5c5c5",
+  "theme_color": "#565631",
   "lang": "ru"
 }

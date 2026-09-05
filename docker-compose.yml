@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     environment:
       PUBLIC_ORIGIN: https://vchat.lokvita.org
+      LOKVITA_API_URL: http://lokvita-gateway:8080
       PORT: "4173"
       HOST: 0.0.0.0
       CHROME_PATH: /usr/bin/chromium

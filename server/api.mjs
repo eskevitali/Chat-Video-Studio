@@ -3,6 +3,7 @@ import {existsSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
+import {createAuth} from './auth.mjs';
 
 const MAX_BODY_BYTES = 100_000;
 const MAX_IMAGE_BYTES = 10_000_000;
@@ -84,6 +85,7 @@ const applyCors = (request, response, environment) => {
     response.setHeader('Vary', 'Origin');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Message-Id, X-File-Name, X-Image-Width, X-Image-Height');
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Credentials', 'true');
   }
 };
 
@@ -154,6 +156,7 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
   const renderJobs = new Map();
   const ttsQueue = createSerialQueue();
   const root = resolve(projectRoot);
+  const auth = createAuth(environment);
 
   return async (request, response) => {
     applyCors(request, response, environment);
@@ -175,6 +178,53 @@ export const createStudioApi = ({environment = {}, projectRoot = process.cwd()} 
     const origin = request.headers.origin;
     if (!isAllowedOrigin(origin, environment)) {
       json(response, 403, {error: 'Недопустимый источник запроса.'});
+      return true;
+    }
+
+    if (path === '/api/login' && request.method === 'POST') {
+      try {
+        const body = await readJson(request);
+        const result = await auth.login(
+          typeof body.email === 'string' ? body.email : typeof body.username === 'string' ? body.username : '',
+          typeof body.password === 'string' ? body.password : '',
+          auth.clientAddress(request),
+        );
+        if (!result.ok) return json(response, 401, {error: result.error});
+        auth.attachSessionCookie(response, result.token);
+        json(response, 200, {username: result.username, membershipStatus: result.membershipStatus});
+      } catch (error) {
+        json(response, 400, {error: error instanceof Error ? error.message : 'Ошибка входа.'});
+      }
+      return true;
+    }
+
+    if (path === '/api/logout' && request.method === 'POST') {
+      auth.logout(request);
+      auth.clearSessionCookie(response);
+      json(response, 200, {ok: true});
+      return true;
+    }
+
+    if (path === '/api/session' && request.method === 'GET') {
+      if (!auth.enabled) {
+        json(response, 200, {username: 'local', auth: false});
+        return true;
+      }
+      const session = auth.sessionOf(request);
+      if (!session) {
+        json(response, 401, {error: 'Нужна авторизация.'});
+        return true;
+      }
+      json(response, 200, {
+        username: session.username,
+        membershipStatus: session.membershipStatus,
+        auth: true,
+      });
+      return true;
+    }
+
+    if (auth.enabled && !auth.sessionOf(request)) {
+      json(response, 401, {error: 'Нужна авторизация.'});
       return true;
     }
 
